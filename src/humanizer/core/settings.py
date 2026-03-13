@@ -35,7 +35,11 @@ class Settings(BaseSettings):
     gemini_api_key: str | None = Field(
         default=None,
         alias="GEMINI_API_KEY",
-        validation_alias=AliasChoices("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+        validation_alias=AliasChoices(
+            "GEMINI_API_KEY",
+            "GOOGLE_API_KEY",
+            "HUMANIZER_GEMINI_API_KEY",
+        ),
     )
     grok_api_key: str | None = Field(
         default=None,

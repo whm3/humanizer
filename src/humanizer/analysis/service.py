@@ -1,90 +1,337 @@
 from __future__ import annotations
 
+import re
 from time import perf_counter
 from uuid import uuid4
 
-from humanizer.analysis.profiles import is_supported_profile
-from humanizer.api.schemas import AnalyzeRequest, AnalyzeResult, BatchAnalyzeItemResponse
+from humanizer.analysis.profiles import get_profile
+from humanizer.api.schemas import (
+    AnalysisSummary,
+    AggregateSummary,
+    AnalyzeAggregateResult,
+    AnalyzeRequest,
+    AnalyzeResult,
+    BatchAnalyzeItemResponse,
+    HumanizeIteration,
+    HumanizeRequest,
+    HumanizeResult,
+)
+from humanizer.core.errors import ValidationError
 from humanizer.core.settings import Settings
+from humanizer.input_loading import detect_content_type, resolve_text_input
+from humanizer.providers.base import ProviderAdapter, ProviderRequest
 
 
 class AnalysisService:
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, providers: dict[str, ProviderAdapter]):
         self.settings = settings
+        self.providers = providers
 
-    def analyze(self, request: AnalyzeRequest) -> AnalyzeResult:
-        if len(request.text) > self.settings.request_text_max_chars:
-            raise ValueError("text exceeds configured limit")
-        if not is_supported_profile(request.profile):
-            raise ValueError(f"unsupported profile: {request.profile}")
+    def analyze(self, request: AnalyzeRequest) -> AnalyzeAggregateResult:
+        input_text = resolve_text_input(request.text, request.input_path, request.input_url)
+        content_type = detect_content_type(input_text, request.input_path, request.content_type)
+        if len(input_text) > self.settings.request_text_max_chars:
+            raise ValidationError("text exceeds configured limit")
+        profile = get_profile(request.profile)
+        selected_providers = self._resolve_providers(request, profile.supported_providers)
+        if not selected_providers:
+            raise ValidationError("no enabled providers with configured credentials are available")
 
-        provider = request.provider or self.settings.default_provider
-        if provider == "openai" and not self.settings.enable_provider_openai:
-            raise ValueError("provider disabled: openai")
-        if provider == "perplexity" and not self.settings.enable_provider_perplexity:
-            raise ValueError("provider disabled: perplexity")
-        if provider not in {"openai", "perplexity"}:
-            raise ValueError(f"unsupported provider: {provider}")
-
-        model = request.model or self.settings.default_model
         started = perf_counter()
-        label, score, confidence, signals = self._score(request.text, request.profile)
+        source_results = [
+            self._analyze_with_provider(
+                provider_name=provider_name,
+                request=request,
+                input_text=input_text,
+                profile_name=profile.name,
+                system_prompt=profile.system_prompt,
+            )
+            for provider_name in selected_providers
+        ]
         latency_ms = max(1, int((perf_counter() - started) * 1000))
+        consensus = self._build_consensus(source_results)
+        worst_case = max(source_results, key=lambda result: result.score)
 
-        return AnalyzeResult(
-            profile=request.profile,
-            label=label,
-            score=score,
-            confidence=confidence,
-            signals=signals,
-            provider=provider,
-            model=model,
+        return AnalyzeAggregateResult(
+            content_type=content_type,
+            profile=profile.name,
             request_id=f"req_{uuid4().hex[:12]}",
             latency_ms=latency_ms,
+            provider_selection=request.provider or "all_available",
+            selected_providers=selected_providers,
+            source_results=source_results,
+            consensus=consensus,
+            worst_case=worst_case,
+            summary=self._build_summary(profile.name, content_type, source_results, consensus, worst_case),
         )
 
     def analyze_batch(self, items: list[AnalyzeRequest]) -> list[BatchAnalyzeItemResponse]:
         if len(items) > self.settings.batch_max_items:
-            raise ValueError("batch exceeds configured limit")
+            raise ValidationError("batch exceeds configured limit")
 
         results: list[BatchAnalyzeItemResponse] = []
         for item in items:
             try:
                 results.append(BatchAnalyzeItemResponse(status="success", result=self.analyze(item)))
-            except ValueError as exc:
+            except ValidationError as exc:
                 results.append(BatchAnalyzeItemResponse(status="error", error=str(exc)))
         return results
+
+    def humanize_until_threshold(self, request: HumanizeRequest) -> HumanizeResult:
+        current_text = resolve_text_input(request.text, request.input_path, request.input_url)
+        content_type = detect_content_type(current_text, request.input_path, request.content_type)
+        if content_type == "code":
+            raise ValidationError("humanization is disabled for source code inputs")
+        iterations: list[HumanizeIteration] = []
+        final_analysis: AnalyzeAggregateResult | None = None
+
+        for iteration_index in range(1, request.max_iterations + 1):
+            analysis = self.analyze(
+                AnalyzeRequest(
+                    text=current_text,
+                    content_type=content_type,
+                    profile=request.profile,
+                    provider=request.provider,
+                    model=request.model,
+                    language_hint=request.language_hint,
+                    metadata=request.metadata,
+                )
+            )
+            final_analysis = analysis
+            if analysis.consensus.score <= request.threshold:
+                iterations.append(
+                    HumanizeIteration(
+                        iteration=iteration_index,
+                        input_text=current_text,
+                        output_text=current_text,
+                        applied_changes=[],
+                        analysis=analysis,
+                    )
+                )
+                break
+
+            rewritten_text = self._rewrite_text(current_text, analysis.summary.humanization_changes)
+            iterations.append(
+                HumanizeIteration(
+                    iteration=iteration_index,
+                    input_text=current_text,
+                    output_text=rewritten_text,
+                    applied_changes=analysis.summary.humanization_changes,
+                    analysis=analysis,
+                )
+            )
+            current_text = rewritten_text
+
+        if final_analysis is None:
+            raise ValidationError("humanization did not produce an analysis result")
+
+        if iterations and iterations[-1].output_text != current_text:
+            current_text = iterations[-1].output_text
+
+        if final_analysis.consensus.score > request.threshold:
+            final_analysis = self.analyze(
+                AnalyzeRequest(
+                    text=current_text,
+                    content_type=content_type,
+                    profile=request.profile,
+                    provider=request.provider,
+                    model=request.model,
+                    language_hint=request.language_hint,
+                    metadata=request.metadata,
+                )
+            )
+
+        return HumanizeResult(
+            original_text=request.text,
+            rewritten_text=current_text,
+            threshold=request.threshold,
+            reached_threshold=final_analysis.consensus.score <= request.threshold,
+            iterations=iterations,
+            final_analysis=final_analysis,
+        )
 
     def list_providers(self) -> list[dict[str, str | bool]]:
         return [
             {
-                "name": "openai",
-                "enabled": self.settings.enable_provider_openai,
+                "name": provider_name,
+                "enabled": True,
                 "default_model": self.settings.default_model,
-            },
-            {
-                "name": "perplexity",
-                "enabled": self.settings.enable_provider_perplexity,
-                "default_model": self.settings.default_model,
-            },
+            }
+            for provider_name in sorted(self.providers)
         ]
 
-    def _score(self, text: str, profile: str) -> tuple[str, float, str, list[str]]:
-        word_count = len(text.split())
-        avg_word_len = sum(len(word.strip(".,!?")) for word in text.split()) / max(word_count, 1)
-        signal = "high structural regularity" if avg_word_len > 4.5 else "higher lexical variation"
+    def _resolve_providers(
+        self,
+        request: AnalyzeRequest,
+        supported_providers: tuple[str, ...],
+    ) -> list[str]:
+        if request.provider is not None:
+            if request.provider not in self.providers:
+                raise ValidationError(f"unsupported or disabled provider: {request.provider}")
+            if request.provider not in supported_providers:
+                raise ValidationError(
+                    f"profile {request.profile} does not support provider: {request.provider}"
+                )
+            return [request.provider]
 
-        if profile == "humanization_feedback":
-            return (
-                "needs_humanization" if avg_word_len > 4.8 else "naturally_varied",
-                0.66 if avg_word_len > 4.8 else 0.31,
-                "medium",
-                [signal, "sentence rhythm estimate generated locally"],
+        return [
+            provider_name
+            for provider_name in sorted(self.providers)
+            if provider_name in supported_providers
+        ]
+
+    def _analyze_with_provider(
+        self,
+        provider_name: str,
+        request: AnalyzeRequest,
+        input_text: str,
+        profile_name: str,
+        system_prompt: str,
+    ) -> AnalyzeResult:
+        model = request.model or self.settings.default_model
+        provider_result = self.providers[provider_name].analyze(
+            ProviderRequest(
+                text=input_text,
+                profile_name=profile_name,
+                language_hint=request.language_hint,
+                content_type=request.content_type,
+                system_prompt=system_prompt,
+                model=model,
+                metadata=request.metadata,
             )
-
-        return (
-            "likely_ai_assisted" if avg_word_len > 4.7 else "likely_human",
-            0.72 if avg_word_len > 4.7 else 0.28,
-            "medium",
-            [signal, "baseline heuristic score"],
         )
+        return AnalyzeResult(
+            provider=provider_name,
+            model=model,
+            profile=profile_name,
+            label=provider_result.label,
+            score=provider_result.score,
+            confidence=provider_result.confidence,
+            signals=provider_result.signals,
+            explanation=provider_result.explanation,
+            request_id=f"req_{uuid4().hex[:12]}",
+            latency_ms=1,
+        )
+
+    def _build_consensus(self, source_results: list[AnalyzeResult]) -> AggregateSummary:
+        average_score = round(
+            sum(result.score for result in source_results) / max(len(source_results), 1),
+            4,
+        )
+        labels = [result.label for result in source_results]
+        likely_ai_votes = sum(1 for label in labels if "ai" in label)
+        label = labels[0] if len(set(labels)) == 1 else (
+            "likely_ai_assisted" if likely_ai_votes >= (len(labels) / 2) else "likely_human"
+        )
+        confidence = "high" if len(set(labels)) == 1 and len(labels) > 1 else "medium"
+        signals: list[str] = []
+        for result in source_results:
+            for signal in result.signals:
+                if signal not in signals:
+                    signals.append(signal)
+
+        return AggregateSummary(
+            label=label,
+            score=average_score,
+            confidence=confidence,
+            signals=signals[:4],
+            providers_considered=[result.provider for result in source_results],
+        )
+
+    def _build_summary(
+        self,
+        profile_name: str,
+        content_type: str,
+        source_results: list[AnalyzeResult],
+        consensus: AggregateSummary,
+        worst_case: AnalyzeResult,
+    ) -> AnalysisSummary:
+        providers = ", ".join(result.provider for result in source_results)
+        evidence = ", ".join(consensus.signals[:3]) or "limited provider evidence"
+        detections = (
+            f"{len(source_results)} sources analyzed via {providers}. "
+            f"Consensus label is {consensus.label} with score {consensus.score:.2f}. "
+            f"Worst-case source is {worst_case.provider} at score {worst_case.score:.2f}."
+        )
+        trends = (
+            "Providers broadly agree on the main structural signals."
+            if consensus.confidence == "high"
+            else "Providers show mixed signals but point to overlapping structural patterns."
+        )
+        ai_evidence = (
+            f"Primary evidence of AI involvement: {evidence}. "
+            f"Highest-risk source: {worst_case.provider} reported {worst_case.label}."
+        )
+        if content_type == "code":
+            humanization_changes = []
+            humanization = "Humanization is disabled for source code inputs."
+        else:
+            humanization_changes = self._humanization_changes(profile_name, consensus.signals)
+            humanization = (
+                "To make the output feel more human, reduce the strongest repeated signals and "
+                f"focus on these changes: {', '.join(humanization_changes)}."
+            )
+        return AnalysisSummary(
+            detections=detections,
+            trends=trends,
+            ai_evidence=ai_evidence,
+            humanization=humanization,
+            humanization_changes=humanization_changes,
+        )
+
+    def _humanization_changes(self, profile_name: str, signals: list[str]) -> list[str]:
+        changes: list[str] = []
+        signal_text = " ".join(signals).lower()
+        if "regularity" in signal_text:
+            changes.append("vary sentence length and structure")
+        if "dense" in signal_text or "rhythm" in signal_text:
+            changes.append("break up dense passages with shorter, uneven phrasing")
+        if "lexical" in signal_text:
+            changes.append("use more specific and less repetitive word choices")
+        if profile_name == "humanization_feedback":
+            changes.append("add personal perspective or lived-detail phrasing")
+        if not changes:
+            changes.append("introduce more varied cadence and concrete detail")
+        return changes[:4]
+
+    def _rewrite_text(self, text: str, changes: list[str]) -> str:
+        segments = re.split(r"(```.*?```)", text, flags=re.DOTALL)
+        rewritten_segments: list[str] = []
+        for segment in segments:
+            if segment.startswith("```") and segment.endswith("```"):
+                rewritten_segments.append(segment)
+            else:
+                rewritten_segments.append(self._rewrite_prose_segment(segment, changes))
+        rewritten = "".join(rewritten_segments)
+        if rewritten == text:
+            rewritten = f"In practice, {rewritten}"
+        return rewritten
+
+    def _rewrite_prose_segment(self, text: str, changes: list[str]) -> str:
+        rewritten = text
+        replacements = {
+            "utilize": "use",
+            "therefore": "so",
+            "moreover": "also",
+            "furthermore": "and",
+            "however": "but",
+            "individuals": "people",
+            "numerous": "many",
+        }
+        for source, target in replacements.items():
+            rewritten = rewritten.replace(source, target).replace(source.capitalize(), target.capitalize())
+
+        for change in changes:
+            lowered = change.lower()
+            if "vary sentence length" in lowered:
+                rewritten = rewritten.replace(", and ", ". And ")
+                rewritten = rewritten.replace("; ", ". ")
+            elif "dense passages" in lowered:
+                rewritten = rewritten.replace(", ", ". ")
+            elif "word choices" in lowered:
+                rewritten = rewritten.replace(" in order to ", " to ")
+            elif "personal perspective" in lowered and not rewritten.startswith("I "):
+                rewritten = f"I think {rewritten[:1].lower()}{rewritten[1:]}"
+
+        rewritten = " ".join(segment.strip() for segment in rewritten.split())
+        return rewritten

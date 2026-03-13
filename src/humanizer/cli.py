@@ -4,10 +4,11 @@ import argparse
 import json
 from typing import Sequence
 
-from humanizer import __version__
 from humanizer.analysis.service import AnalysisService
-from humanizer.api.schemas import AnalyzeRequest
+from humanizer.api.schemas import AnalyzeRequest, BatchAnalyzeRequest, HumanizeRequest
+from humanizer.commands import CommandService
 from humanizer.core.settings import get_settings
+from humanizer.providers.registry import build_provider_registry
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -22,13 +23,31 @@ def build_parser() -> argparse.ArgumentParser:
     providers_subparsers.add_parser("list")
 
     analyze_parser = subparsers.add_parser("analyze")
-    analyze_parser.add_argument("--text", required=True)
+    analyze_input_group = analyze_parser.add_mutually_exclusive_group(required=True)
+    analyze_input_group.add_argument("--text")
+    analyze_input_group.add_argument("--input-file")
+    analyze_input_group.add_argument("--input-url")
     analyze_parser.add_argument("--profile", required=True)
+    analyze_parser.add_argument("--content-type", default="auto", choices=["auto", "text", "code"])
     analyze_parser.add_argument("--provider")
     analyze_parser.add_argument("--model")
+    analyze_parser.add_argument("--language", default="en")
 
     batch_parser = subparsers.add_parser("analyze-batch")
     batch_parser.add_argument("--file", required=True)
+
+    humanize_parser = subparsers.add_parser("humanize")
+    humanize_input_group = humanize_parser.add_mutually_exclusive_group(required=True)
+    humanize_input_group.add_argument("--text")
+    humanize_input_group.add_argument("--input-file")
+    humanize_input_group.add_argument("--input-url")
+    humanize_parser.add_argument("--profile", default="ai_detection")
+    humanize_parser.add_argument("--content-type", default="auto", choices=["auto", "text", "code"])
+    humanize_parser.add_argument("--provider")
+    humanize_parser.add_argument("--model")
+    humanize_parser.add_argument("--language", default="en")
+    humanize_parser.add_argument("--threshold", type=float, default=0.35)
+    humanize_parser.add_argument("--max-iterations", type=int, default=3)
 
     return parser
 
@@ -37,34 +56,71 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     settings = get_settings()
-    service = AnalysisService(settings)
+    service = AnalysisService(settings, build_provider_registry(settings))
+    commands = CommandService(service)
 
     if args.command == "health":
-        print(json.dumps({"status": "ok", "service": settings.app_name, "version": settings.app_version}))
+        print(json.dumps(commands.health()))
         return 0
     if args.command == "version":
-        print(json.dumps({"status": "success", "service": settings.app_name, "version": __version__}))
+        print(json.dumps(commands.version()))
         return 0
     if args.command == "providers":
-        print(json.dumps({"status": "success", "providers": service.list_providers()}))
+        print(json.dumps(commands.providers()))
         return 0
     if args.command == "analyze":
-        result = service.analyze(
-            AnalyzeRequest(
-                text=args.text,
-                profile=args.profile,
-                provider=args.provider,
-                model=args.model,
+        print(
+            json.dumps(
+                commands.analyze(
+                    AnalyzeRequest(
+                        text=args.text,
+                        input_path=args.input_file,
+                        input_url=args.input_url,
+                        content_type=args.content_type,
+                        profile=args.profile,
+                        provider=args.provider,
+                        model=args.model,
+                        language_hint=args.language,
+                    )
+                )
             )
         )
-        print(json.dumps({"status": "success", "result": result.model_dump()}))
         return 0
     if args.command == "analyze-batch":
         with open(args.file, "r", encoding="utf-8") as handle:
             payload = json.load(handle)
-        items = [AnalyzeRequest(**item) for item in payload["items"]]
-        results = service.analyze_batch(items)
-        print(json.dumps({"status": "success", "results": [item.model_dump() for item in results]}))
+        print(
+            json.dumps(
+                commands.analyze_batch(
+                    BatchAnalyzeRequest(
+                        items=[
+                            AnalyzeRequest(**item)
+                            for item in payload["items"]
+                        ]
+                    )
+                )
+            )
+        )
+        return 0
+    if args.command == "humanize":
+        print(
+            json.dumps(
+                commands.humanize(
+                    HumanizeRequest(
+                        text=args.text,
+                        input_path=args.input_file,
+                        input_url=args.input_url,
+                        content_type=args.content_type,
+                        profile=args.profile,
+                        provider=args.provider,
+                        model=args.model,
+                        language_hint=args.language,
+                        threshold=args.threshold,
+                        max_iterations=args.max_iterations,
+                    )
+                )
+            )
+        )
         return 0
 
     parser.error("unknown command")

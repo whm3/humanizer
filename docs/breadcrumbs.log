@@ -137,3 +137,8 @@ lessons: Rewrite-provider choice should be carried as explicit request/result me
 what: Implemented `humanizer_provider` and `humanizer_model` fields for the humanize flow across settings, request/result schemas, service logic, CLI flags, and focused automated tests; validated the change with 23 passing tests across service, command, and CLI layers.
 why: The humanization loop needed user-selectable rewrite-model control without changing the existing detector contract.
 lessons: Even when rewrite behavior is still deterministic locally, carrying provider/model selection through the interface now prevents a later API redesign when live rewrite adapters are added.
+
+2026-03-13T18:44:14Z | agent=Codex (GPT-5-based coding agent) | type=decision
+what: Added local-model backend support as a post-MVP feature request so the system can eventually run against self-hosted or locally available models when users have them configured.
+why: Local model support is a meaningful extension of provider flexibility, but under the current scope rule it should remain outside the active MVP unless explicitly reclassified as pre-MVP.
+lessons: Backend flexibility should distinguish between hosted APIs and local inference endpoints early in the design, because deployment, dependency, and licensing concerns differ significantly.

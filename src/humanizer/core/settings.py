@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     enable_provider_grok: bool = True
     enable_provider_openai: bool = True
     enable_provider_perplexity: bool = True
-    request_text_max_chars: int = 10000
+    request_text_max_chars: int = 250000
     batch_max_items: int = 20
     allow_stub_providers_without_keys: bool = False
     anthropic_api_key: str | None = Field(

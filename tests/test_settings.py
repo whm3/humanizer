@@ -1,3 +1,5 @@
+import pytest
+
 from humanizer.core.settings import Settings
 from humanizer.providers.registry import build_provider_registry
 
@@ -26,3 +28,19 @@ def test_registry_includes_providers_with_detected_tokens() -> None:
         "openai",
         "perplexity",
     }
+
+
+def test_default_request_text_limit_is_large_enough_for_real_documents() -> None:
+    settings = Settings()
+
+    assert settings.request_text_max_chars == 250000
+
+
+def test_request_text_limit_can_be_overridden_from_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("REQUEST_TEXT_MAX_CHARS", "12345")
+
+    settings = Settings()
+
+    assert settings.request_text_max_chars == 12345

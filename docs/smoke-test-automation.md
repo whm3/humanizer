@@ -36,6 +36,12 @@ Latest known full-suite result during active development:
 
 - `46 passed`
 
+Current default extracted-text limit:
+
+- `250000` characters
+- configurable through `REQUEST_TEXT_MAX_CHARS`
+- this limit applies to extracted text length, not raw file size in bytes
+
 ### 2. Runtime smoke-test commands
 
 These are lighter-weight, behavior-oriented checks that exercise the current branch like an operator would.
@@ -168,6 +174,7 @@ The most recent smoke-test pass confirmed:
 - The current rewrite logic is deterministic and placeholder-oriented; it is not yet using live provider-backed rewriting.
 - Mixed prose/code humanization preserves code blocks, but surrounding Markdown formatting may still be compressed in ways that should be improved before polished end-user documentation is finalized.
 - Smoke tests are currently documented as commands rather than packaged in a single shell script. That is acceptable for now, but a dedicated script would improve repeatability later.
+- Very large documents can still exceed the extracted-text limit if their parsed text is longer than `REQUEST_TEXT_MAX_CHARS`, even when the file size itself seems reasonable.
 
 ## When To Run Smoke Tests
 

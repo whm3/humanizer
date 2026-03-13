@@ -1,0 +1,84 @@
+2026-03-13T17:38:47Z | agent=Codex (GPT-5-based coding agent) | type=action
+what: Initialized Git in /data0/work/HUMANIZER, set origin to git@github.com:whm3/humanizer.git, and set the local branch to main.
+why: The project needed to be connected to the requested GitHub repository and prepared for version control.
+lessons: The remote appears to have no existing refs, so the repository is likely empty and ready for the first commit.
+
+2026-03-13T17:38:47Z | agent=Codex (GPT-5-based coding agent) | type=decision
+what: Established docs/breadcrumbs.log as the running project log for actions and decisions.
+why: The project now requires durable traceability for what changed, why it changed, lessons learned, and which agent performed the work.
+lessons: A simple append-only text log keeps process history visible even before broader project tooling exists.
+
+2026-03-13T17:38:47Z | agent=Codex (GPT-5-based coding agent) | type=action
+what: Created docs/breadcrumbs.log with a standard entry shape covering action/decision, reason, lessons, and agent identity.
+why: Future work needs a consistent place and format for recording project breadcrumbs.
+lessons: Defining the format up front reduces ambiguity and makes later entries faster to add and review.
+
+2026-03-13T17:39:22Z | agent=Codex (GPT-5-based coding agent) | type=decision
+what: Designated docs/breadcrumbs.log as backup context and handoff material for any future session or replacement agent.
+why: Project continuity should not depend on a single live chat context; successors need a durable summary of actions, rationale, and lessons learned.
+lessons: A handoff log is more useful when it captures decisions as they happen rather than trying to reconstruct intent later.
+
+2026-03-13T17:39:52Z | agent=Codex (GPT-5-based coding agent) | type=decision
+what: Chose /data0/work/HUMANIZER/src as the primary working directory for building the project.
+why: Separating implementation files from documentation keeps the repository structure clearer and gives future work a predictable home.
+lessons: Establishing a working directory early reduces later churn from moving files after code has started accumulating.
+
+2026-03-13T17:39:52Z | agent=Codex (GPT-5-based coding agent) | type=action
+what: Created the /data0/work/HUMANIZER/src directory.
+why: The project needed a dedicated source directory to build out implementation work.
+lessons: Creating the target workspace before writing code makes subsequent file organization and handoff simpler.
+
+2026-03-13T17:40:34Z | agent=Codex (GPT-5-based coding agent) | type=action
+what: Reviewed /data0/work/HUMANIZER/docs/textguard-rewrite-architecture.md to extract the project goal, architecture direction, and phased delivery plan.
+why: Implementation should follow the documented product intent and avoid drifting into ad hoc design decisions.
+lessons: The spec is opinionated in a useful way: keep the API stable, keep providers behind adapters, and avoid inheriting DeepSeek-specific assumptions from the predecessor project.
+
+2026-03-13T17:41:23Z | agent=Codex (GPT-5-based coding agent) | type=decision
+what: Use provider credentials from ~/.env for local testing against OpenAI and Perplexity.
+why: The required API keys are already available locally, which allows smoke testing against real providers without committing secrets into the repository.
+lessons: Secrets should be referenced as environment inputs and never copied into source files, logs, or handoff notes.
+
+2026-03-13T17:41:42Z | agent=Codex (GPT-5-based coding agent) | type=decision
+what: Enforce environment-reference-only handling for secrets and avoid copying credential values into code, logs, tests, or project documentation.
+why: Good security practice requires minimizing secret exposure and preventing accidental persistence of sensitive values in the repository or collaboration artifacts.
+lessons: Security discipline is easier to maintain when secret handling rules are explicit and documented before implementation begins.
+
+2026-03-13T17:42:14Z | agent=Codex (GPT-5-based coding agent) | type=decision
+what: Adopt a phased delivery plan that starts with project scaffolding and a single-provider vertical slice before expanding to multi-provider support, security controls, and optional persistence.
+why: The architecture should be validated with the smallest end-to-end implementation before adding more complexity or surface area.
+lessons: Sequencing matters; integrating one provider cleanly and then a second provider is the fastest way to prove whether the abstraction boundaries are real.
+
+2026-03-13T17:42:14Z | agent=Codex (GPT-5-based coding agent) | type=action
+what: Created /data0/work/HUMANIZER/docs/project-plan.md with execution phases, deliverables, risks, and definition-of-done checkpoints.
+why: The project needed an implementation plan that turns the architecture spec into an actionable build sequence.
+lessons: A plan is more useful when it defines completion criteria, not just a list of tasks.
+
+2026-03-13T17:45:45Z | agent=Codex (GPT-5-based coding agent) | type=decision
+what: Set API-first development as the project rule and required CLI parity for significant functions.
+why: Apps, scripts, and agents need a stable programmatic interface, and CLI access should map to the same capabilities for local operations and automation.
+lessons: Enforcing API and CLI parity early prevents hidden internal-only features and keeps service contracts explicit.
+
+2026-03-13T17:45:45Z | agent=Codex (GPT-5-based coding agent) | type=decision
+what: Required a UAT plan entry for every action and function and required dependency/license tracking as development proceeds.
+why: Acceptance coverage and upstream obligations should be part of delivery, not after-the-fact documentation.
+lessons: Operational readiness improves when testing expectations and license obligations are documented alongside implementation work.
+
+2026-03-13T17:45:45Z | agent=Codex (GPT-5-based coding agent) | type=decision
+what: Constrained development to this local environment and required use of a project-local virtual environment for Python isolation.
+why: Local isolation reduces environment drift and avoids contaminating the system interpreter or depending on undeclared machine state.
+lessons: Isolation decisions are most effective when made before dependencies are installed.
+
+2026-03-13T17:45:45Z | agent=Codex (GPT-5-based coding agent) | type=action
+what: Created /data0/work/HUMANIZER/.venv with Python's built-in virtual environment tooling.
+why: The project needed an isolated Python runtime for local development and testing.
+lessons: Establishing the venv before adding packages makes dependency management and reproducibility easier.
+
+2026-03-13T17:45:45Z | agent=Codex (GPT-5-based coding agent) | type=action
+what: Created docs/development-standards.md, docs/dependency-license-tracker.md, and docs/uat-plan.md.
+why: The project needed durable documentation for development rules, upstream dependency obligations, and user acceptance testing coverage.
+lessons: Process documents are most useful when created before implementation details begin to sprawl.
+
+2026-03-13T17:49:29Z | agent=Codex (GPT-5-based coding agent) | type=decision
+what: Use the GitHub repository at git@github.com:whm3/humanizer.git as the remote backup environment for project state.
+why: The project needs an off-machine backup and handoff location in addition to the local continuity log.
+lessons: Remote backup is most useful when updates are pushed early and consistently rather than deferred until later milestones.

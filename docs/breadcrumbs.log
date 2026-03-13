@@ -167,3 +167,8 @@ lessons: Environment-variable compatibility and CLI file-input paths need direct
 what: Added docs/smoke-test-automation.md to document the current smoke-test automation approach, including the automated pytest layer, the manual runtime smoke commands, expected outcomes, and known caveats.
 why: The smoke-test process should be repeatable and visible to future sessions or collaborators rather than reconstructed from terminal history.
 lessons: Runtime validation becomes much easier to maintain once the boundary between automated tests and operator-style smoke checks is written down explicitly.
+
+2026-03-13T23:11:22Z | agent=Codex (GPT-5-based coding agent) | type=action
+what: Added a local test document at testdocs/Hamlet.pdf for smoke-testing document ingestion against a realistic PDF input.
+why: Manual validation benefits from having a stable sample document in the repository workspace rather than relying only on inline text or temporary files.
+lessons: Keeping representative test artifacts in a dedicated folder makes recurring manual checks faster and easier to reproduce.

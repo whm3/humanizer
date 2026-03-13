@@ -45,6 +45,8 @@ def build_parser() -> argparse.ArgumentParser:
     humanize_parser.add_argument("--content-type", default="auto", choices=["auto", "text", "code"])
     humanize_parser.add_argument("--provider")
     humanize_parser.add_argument("--model")
+    humanize_parser.add_argument("--humanizer-provider")
+    humanize_parser.add_argument("--humanizer-model")
     humanize_parser.add_argument("--language", default="en")
     humanize_parser.add_argument("--threshold", type=float, default=0.35)
     humanize_parser.add_argument("--max-iterations", type=int, default=3)
@@ -114,6 +116,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                         profile=args.profile,
                         provider=args.provider,
                         model=args.model,
+                        humanizer_provider=args.humanizer_provider,
+                        humanizer_model=args.humanizer_model,
                         language_hint=args.language,
                         threshold=args.threshold,
                         max_iterations=args.max_iterations,

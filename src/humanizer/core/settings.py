@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     app_version: str = "0.1.0"
     default_provider: str = "openai"
     default_model: str = "gpt-5-mini"
+    default_humanizer_provider: str = "openai"
+    default_humanizer_model: str = "gpt-5-mini"
     enable_provider_anthropic: bool = True
     enable_provider_deepseek: bool = True
     enable_provider_gemini: bool = True

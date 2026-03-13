@@ -127,3 +127,13 @@ lessons: Once MVP scope is frozen, even clearly useful enhancements should be qu
 what: Completed a full local automated test run after reconciling the request contract and input-loading flow; the suite passed with 46 tests covering service logic, API routes, CLI behavior, commands, schemas, settings, and input loading.
 why: The branch needed a coherent validation checkpoint before committing and pushing another remote backup snapshot.
 lessons: Integration risk drops sharply once the API, CLI, and ingestion layers are validated together instead of only through targeted subset runs.
+
+2026-03-13T18:34:29Z | agent=Codex (GPT-5-based coding agent) | type=decision
+what: Added explicit humanizer provider/model selection to the iterative humanization workflow, defaulting the rewrite side to OpenAI for now while keeping the contract future-proof for a later Gemini default.
+why: The user requested pre-MVP control over which model performs the rewrite step, separate from the detector-provider selection.
+lessons: Rewrite-provider choice should be carried as explicit request/result metadata instead of being implicit, because the rewrite side and detector side can diverge over time.
+
+2026-03-13T18:34:29Z | agent=Codex (GPT-5-based coding agent) | type=action
+what: Implemented `humanizer_provider` and `humanizer_model` fields for the humanize flow across settings, request/result schemas, service logic, CLI flags, and focused automated tests; validated the change with 23 passing tests across service, command, and CLI layers.
+why: The humanization loop needed user-selectable rewrite-model control without changing the existing detector contract.
+lessons: Even when rewrite behavior is still deterministic locally, carrying provider/model selection through the interface now prevents a later API redesign when live rewrite adapters are added.

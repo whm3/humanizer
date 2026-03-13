@@ -142,3 +142,13 @@ lessons: Even when rewrite behavior is still deterministic locally, carrying pro
 what: Added local-model backend support as a post-MVP feature request so the system can eventually run against self-hosted or locally available models when users have them configured.
 why: Local model support is a meaningful extension of provider flexibility, but under the current scope rule it should remain outside the active MVP unless explicitly reclassified as pre-MVP.
 lessons: Backend flexibility should distinguish between hosted APIs and local inference endpoints early in the design, because deployment, dependency, and licensing concerns differ significantly.
+
+2026-03-13T23:01:39Z | agent=Codex (GPT-5-based coding agent) | type=action
+what: Opened GitHub PR #19 (`Build multi-provider MVP workflow`) from `feature/multi-source-consensus` into `main`, covering the current MVP-oriented text workflow branch.
+why: The feature branch reached a reviewable checkpoint with green automated validation and needed to be represented as a formal PR rather than only as pushed commits.
+lessons: Converting a broad feature branch into a PR is the point where issue reconciliation becomes practical, because implemented work can be tied to a single review artifact.
+
+2026-03-13T23:01:39Z | agent=Codex (GPT-5-based coding agent) | type=action
+what: Reconciled the GitHub issue tracker against PR #19 by closing the implemented MVP issues (#2, #4, #6, #7, #8, #10, #11, #12, #13, #14, #15, #17), leaving only the explicit post-MVP backlog items open (#9 multimodal workflows, #16 rewrite personalities, #18 local-model backend support).
+why: The open issue list should reflect actual remaining work instead of features already implemented and validated on the feature branch.
+lessons: Issue hygiene matters most after a burst of rapid requirements intake, otherwise the tracker stops matching reality even when the code is progressing well.

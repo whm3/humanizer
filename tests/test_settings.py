@@ -1,6 +1,9 @@
 import pytest
 
 from humanizer.core.settings import Settings
+from humanizer.providers.gemini_adapter import GeminiAdapter
+from humanizer.providers.openai_adapter import OpenAIAdapter
+from humanizer.providers.perplexity_adapter import PerplexityAdapter
 from humanizer.providers.registry import build_provider_registry
 
 
@@ -28,6 +31,19 @@ def test_registry_includes_providers_with_detected_tokens() -> None:
         "openai",
         "perplexity",
     }
+
+
+def test_registry_uses_live_adapters_when_stub_mode_is_disabled() -> None:
+    settings = Settings(allow_stub_providers_without_keys=False)
+
+    providers = build_provider_registry(settings)
+
+    assert isinstance(providers["gemini"], GeminiAdapter)
+    assert isinstance(providers["openai"], OpenAIAdapter)
+    assert isinstance(providers["perplexity"], PerplexityAdapter)
+    assert providers["openai"].default_model == "gpt-5-mini"
+    assert providers["gemini"].default_model == "gemini-2.5-flash"
+    assert providers["perplexity"].default_model == "sonar"
 
 
 def test_default_request_text_limit_is_large_enough_for_real_documents() -> None:

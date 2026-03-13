@@ -24,8 +24,22 @@ class ProviderResult:
     explanation: str
 
 
+@dataclass(frozen=True)
+class RewriteRequest:
+    text: str
+    language_hint: str
+    content_type: str
+    model: str
+    changes: list[str]
+    metadata: dict[str, object]
+
+
 class ProviderAdapter(Protocol):
     name: str
+    default_model: str
 
     def analyze(self, request: ProviderRequest) -> ProviderResult:
+        ...
+
+    def rewrite(self, request: RewriteRequest) -> str:
         ...

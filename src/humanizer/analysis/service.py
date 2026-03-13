@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from time import perf_counter
 from uuid import uuid4
 
@@ -19,7 +18,7 @@ from humanizer.api.schemas import (
 from humanizer.core.errors import ValidationError
 from humanizer.core.settings import Settings
 from humanizer.input_loading import detect_content_type, resolve_text_input
-from humanizer.providers.base import ProviderAdapter, ProviderRequest
+from humanizer.providers.base import ProviderAdapter, ProviderRequest, RewriteRequest
 
 
 class AnalysisService:
@@ -43,6 +42,7 @@ class AnalysisService:
                 provider_name=provider_name,
                 request=request,
                 input_text=input_text,
+                content_type=content_type,
                 profile_name=profile.name,
                 system_prompt=profile.system_prompt,
             )
@@ -116,6 +116,7 @@ class AnalysisService:
                 analysis.summary.humanization_changes,
                 humanizer_provider,
                 humanizer_model,
+                request.language_hint,
             )
             iterations.append(
                 HumanizeIteration(
@@ -163,7 +164,7 @@ class AnalysisService:
             {
                 "name": provider_name,
                 "enabled": True,
-                "default_model": self.settings.default_model,
+                "default_model": self.providers[provider_name].default_model,
             }
             for provider_name in sorted(self.providers)
         ]
@@ -200,21 +201,24 @@ class AnalysisService:
         provider_name: str,
         request: AnalyzeRequest,
         input_text: str,
+        content_type: str,
         profile_name: str,
         system_prompt: str,
     ) -> AnalyzeResult:
-        model = request.model or self.settings.default_model
+        model = request.model or self.providers[provider_name].default_model
+        started = perf_counter()
         provider_result = self.providers[provider_name].analyze(
             ProviderRequest(
                 text=input_text,
                 profile_name=profile_name,
                 language_hint=request.language_hint,
-                content_type=request.content_type,
+                content_type=content_type,
                 system_prompt=system_prompt,
                 model=model,
                 metadata=request.metadata,
             )
         )
+        latency_ms = max(1, int((perf_counter() - started) * 1000))
         return AnalyzeResult(
             provider=provider_name,
             model=model,
@@ -225,7 +229,7 @@ class AnalysisService:
             signals=provider_result.signals,
             explanation=provider_result.explanation,
             request_id=f"req_{uuid4().hex[:12]}",
-            latency_ms=1,
+            latency_ms=latency_ms,
         )
 
     def _build_consensus(self, source_results: list[AnalyzeResult]) -> AggregateSummary:
@@ -273,10 +277,16 @@ class AnalysisService:
             if consensus.confidence == "high"
             else "Providers show mixed signals but point to overlapping structural patterns."
         )
-        ai_evidence = (
-            f"Primary evidence of AI involvement: {evidence}. "
-            f"Highest-risk source: {worst_case.provider} reported {worst_case.label}."
-        )
+        if "human" in consensus.label or consensus.label == "naturally_varied":
+            ai_evidence = (
+                f"Primary evidence supporting the classification: {evidence}. "
+                f"Highest-scoring source: {worst_case.provider} reported {worst_case.label}."
+            )
+        else:
+            ai_evidence = (
+                f"Primary evidence of AI involvement: {evidence}. "
+                f"Highest-risk source: {worst_case.provider} reported {worst_case.label}."
+            )
         if content_type == "code":
             humanization_changes = []
             humanization = "Humanization is disabled for source code inputs."
@@ -303,6 +313,14 @@ class AnalysisService:
             changes.append("break up dense passages with shorter, uneven phrasing")
         if "lexical" in signal_text:
             changes.append("use more specific and less repetitive word choices")
+        if "fictional" in signal_text or "technobabble" in signal_text or "invented" in signal_text:
+            changes.append("replace invented terminology with plain, credible language")
+        if "bibliography" in signal_text or "citations" in signal_text or "references" in signal_text:
+            changes.append("remove fabricated citations and unsupported references")
+        if "whitepaper" in signal_text or "formal" in signal_text or "structured" in signal_text:
+            changes.append("soften overly rigid whitepaper structure and reduce boilerplate formality")
+        if "numeric" in signal_text or "precision" in signal_text or "specifics" in signal_text:
+            changes.append("reduce implausible numeric precision unless the exact values matter")
         if profile_name == "humanization_feedback":
             changes.append("add personal perspective or lived-detail phrasing")
         if not changes:
@@ -315,25 +333,24 @@ class AnalysisService:
         changes: list[str],
         humanizer_provider: str,
         humanizer_model: str,
+        language_hint: str,
     ) -> str:
-        segments = re.split(r"(```.*?```)", text, flags=re.DOTALL)
+        segments = text.split("```")
         rewritten_segments: list[str] = []
-        for segment in segments:
-            if segment.startswith("```") and segment.endswith("```"):
-                rewritten_segments.append(segment)
-            else:
-                rewritten_segments.append(
-                    self._rewrite_prose_segment(
-                        segment,
-                        changes,
-                        humanizer_provider,
-                        humanizer_model,
-                    )
+        for index, segment in enumerate(segments):
+            if index % 2 == 1:
+                rewritten_segments.append(f"```{segment}```")
+                continue
+            rewritten_segments.append(
+                self._rewrite_prose_segment(
+                    segment,
+                    changes,
+                    humanizer_provider,
+                    humanizer_model,
+                    language_hint,
                 )
-        rewritten = "".join(rewritten_segments)
-        if rewritten == text:
-            rewritten = f"In practice, {rewritten}"
-        return rewritten
+            )
+        return "".join(rewritten_segments)
 
     def _rewrite_prose_segment(
         self,
@@ -341,36 +358,18 @@ class AnalysisService:
         changes: list[str],
         humanizer_provider: str,
         humanizer_model: str,
+        language_hint: str,
     ) -> str:
-        rewritten = text
-        replacements = {
-            "utilize": "use",
-            "therefore": "so",
-            "moreover": "also",
-            "furthermore": "and",
-            "however": "but",
-            "individuals": "people",
-            "numerous": "many",
-        }
-        for source, target in replacements.items():
-            rewritten = rewritten.replace(source, target).replace(source.capitalize(), target.capitalize())
-
-        for change in changes:
-            lowered = change.lower()
-            if "vary sentence length" in lowered:
-                rewritten = rewritten.replace(", and ", ". And ")
-                rewritten = rewritten.replace("; ", ". ")
-            elif "dense passages" in lowered:
-                rewritten = rewritten.replace(", ", ". ")
-            elif "word choices" in lowered:
-                rewritten = rewritten.replace(" in order to ", " to ")
-            elif "personal perspective" in lowered and not rewritten.startswith("I "):
-                rewritten = f"I think {rewritten[:1].lower()}{rewritten[1:]}"
-
-        if humanizer_provider == "openai" and "gpt" in humanizer_model and rewritten and not rewritten.startswith("I think "):
-            rewritten = rewritten.replace("This ", "This ", 1)
-        elif humanizer_provider == "gemini" and rewritten:
-            rewritten = rewritten.replace("And ", "Also, ", 1)
-
-        rewritten = " ".join(segment.strip() for segment in rewritten.split())
-        return rewritten
+        if not text.strip():
+            return text
+        rewritten = self.providers[humanizer_provider].rewrite(
+            RewriteRequest(
+                text=text,
+                language_hint=language_hint,
+                content_type="text",
+                model=humanizer_model,
+                changes=changes,
+                metadata={},
+            )
+        )
+        return rewritten if rewritten.strip() else text

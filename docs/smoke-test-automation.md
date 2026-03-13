@@ -34,7 +34,7 @@ This covers:
 
 Latest known full-suite result during active development:
 
-- `46 passed`
+- `52 passed`
 
 Current default extracted-text limit:
 
@@ -164,17 +164,25 @@ The most recent smoke-test pass confirmed:
 
 - provider autodetection works for the current environment
 - Gemini detection now works with `HUMANIZER_GEMINI_API_KEY`
+- live provider-backed scoring works for `gemini`, `openai`, and `perplexity`
 - file-based analyze and humanize flows work after validator fixes
 - source-code analysis works
 - fenced code blocks are preserved during mixed-document humanization
 - in-process API analyze requests work
 
+Recent live fixture results:
+
+- `testdocs/Sub-QuantumVernierCalibration.md`: consensus `likely_ai_assisted` at `0.90`
+- `testdocs/Hamlet.pdf`: consensus `likely_human` at `0.07`
+- `testdocs/GlobalWarming.pdf`: consensus `likely_human` at `0.33`, with `perplexity` as a stricter outlier at `0.85`
+
 ## Known Caveats
 
-- The current rewrite logic is deterministic and placeholder-oriented; it is not yet using live provider-backed rewriting.
+- The current rewrite logic is still deterministic and placeholder-oriented; only the detector path is live-provider-backed right now.
 - Mixed prose/code humanization preserves code blocks, but surrounding Markdown formatting may still be compressed in ways that should be improved before polished end-user documentation is finalized.
 - Smoke tests are currently documented as commands rather than packaged in a single shell script. That is acceptable for now, but a dedicated script would improve repeatability later.
 - Very large documents can still exceed the extracted-text limit if their parsed text is longer than `REQUEST_TEXT_MAX_CHARS`, even when the file size itself seems reasonable.
+- Some providers appear to express score as confidence in their chosen label rather than raw AI-likelihood; the normalization layer now corrects for that, but this behavior should continue to be watched during future smoke tests.
 
 ## When To Run Smoke Tests
 

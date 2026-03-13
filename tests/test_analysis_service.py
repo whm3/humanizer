@@ -193,3 +193,21 @@ def test_humanize_allows_humanizer_provider_override() -> None:
 
     assert result.humanizer_provider == "gemini"
     assert result.humanizer_model == "gemini-2.5-pro"
+
+
+def test_humanization_changes_target_fabricated_technical_style() -> None:
+    settings = Settings(allow_stub_providers_without_keys=True)
+    service = AnalysisService(settings, build_provider_registry(settings))
+
+    changes = service._humanization_changes(
+        "ai_detection",
+        [
+            "fictional Star Trek technical jargon",
+            "synthetic bibliography citing fabricated sources",
+            "highly structured whitepaper format",
+            "implausible numeric precision",
+        ],
+    )
+
+    joined_changes = " | ".join(changes).lower()
+    assert "invented terminology" in joined_changes or "fabricated citations" in joined_changes

@@ -2,21 +2,77 @@ from __future__ import annotations
 
 from humanizer.core.settings import Settings
 from humanizer.providers.base import ProviderAdapter
+from humanizer.providers.gemini_adapter import GeminiAdapter
 from humanizer.providers.heuristic_adapter import HeuristicAdapter
+from humanizer.providers.openai_adapter import OpenAIAdapter
+from humanizer.providers.perplexity_adapter import PerplexityAdapter
 
 
 def build_provider_registry(settings: Settings) -> dict[str, ProviderAdapter]:
     provider_specs = [
-        ("anthropic", settings.enable_provider_anthropic, settings.anthropic_api_key),
-        ("deepseek", settings.enable_provider_deepseek, settings.deepseek_api_key),
-        ("gemini", settings.enable_provider_gemini, settings.gemini_api_key),
-        ("grok", settings.enable_provider_grok, settings.grok_api_key),
-        ("openai", settings.enable_provider_openai, settings.openai_api_key),
-        ("perplexity", settings.enable_provider_perplexity, settings.perplexity_api_key),
+        (
+            "anthropic",
+            settings.enable_provider_anthropic,
+            settings.anthropic_api_key,
+            lambda: HeuristicAdapter("anthropic", settings.default_model_anthropic),
+        ),
+        (
+            "deepseek",
+            settings.enable_provider_deepseek,
+            settings.deepseek_api_key,
+            lambda: HeuristicAdapter("deepseek", settings.default_model_deepseek),
+        ),
+        (
+            "gemini",
+            settings.enable_provider_gemini,
+            settings.gemini_api_key,
+            lambda: GeminiAdapter(
+                settings.gemini_api_key or "",
+                settings.default_model_gemini,
+                settings.gemini_base_url,
+                settings.provider_request_timeout_seconds,
+            ),
+        ),
+        (
+            "grok",
+            settings.enable_provider_grok,
+            settings.grok_api_key,
+            lambda: HeuristicAdapter("grok", settings.default_model_grok),
+        ),
+        (
+            "openai",
+            settings.enable_provider_openai,
+            settings.openai_api_key,
+            lambda: OpenAIAdapter(
+                settings.openai_api_key or "",
+                settings.default_model_openai,
+                settings.openai_base_url,
+                settings.provider_request_timeout_seconds,
+            ),
+        ),
+        (
+            "perplexity",
+            settings.enable_provider_perplexity,
+            settings.perplexity_api_key,
+            lambda: PerplexityAdapter(
+                settings.perplexity_api_key or "",
+                settings.default_model_perplexity,
+                settings.perplexity_base_url,
+                settings.provider_request_timeout_seconds,
+            ),
+        ),
     ]
 
     providers: dict[str, ProviderAdapter] = {}
-    for provider_name, enabled, api_key in provider_specs:
-        if enabled and (settings.allow_stub_providers_without_keys or bool(api_key)):
-            providers[provider_name] = HeuristicAdapter(provider_name)
+    for provider_name, enabled, api_key, factory in provider_specs:
+        if not enabled:
+            continue
+        if settings.allow_stub_providers_without_keys:
+            providers[provider_name] = HeuristicAdapter(
+                provider_name,
+                getattr(settings, f"default_model_{provider_name}"),
+            )
+            continue
+        if api_key:
+            providers[provider_name] = factory()
     return providers

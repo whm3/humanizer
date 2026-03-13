@@ -8,6 +8,7 @@ from humanizer.api.app import create_app
 @pytest.fixture(autouse=True)
 def provider_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-anthropic-key")
+    monkeypatch.setenv("ALLOW_STUB_PROVIDERS_WITHOUT_KEYS", "true")
     monkeypatch.setenv("DEEPSEEK_API_KEY", "test-deepseek-key")
     monkeypatch.setenv("GOOGLE_API_KEY", "test-gemini-key")
     monkeypatch.setenv("XAI_API_KEY", "test-grok-key")

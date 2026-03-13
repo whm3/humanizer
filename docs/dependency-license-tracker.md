@@ -28,6 +28,14 @@ No upstream code has been copied into this repository yet.
 
 The current architecture is informed by the rewrite specification in `docs/textguard-rewrite-architecture.md`, but no third-party source code has been imported from the predecessor system.
 
+Live provider integrations currently use direct HTTP calls against official provider APIs rather than vendor SDKs:
+
+- OpenAI Responses API
+- Google Gemini `generateContent` API
+- Perplexity chat completions API
+
+This keeps dependency surface smaller, but API contract drift risk is higher than with maintained SDK wrappers, so smoke testing and upstream doc verification remain important.
+
 ## Process Notes
 
 - Do not copy source from upstream projects without recording origin and license.

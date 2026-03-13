@@ -11,6 +11,12 @@ class Settings(BaseSettings):
     app_version: str = "0.1.0"
     default_provider: str = "openai"
     default_model: str = "gpt-5-mini"
+    default_model_openai: str = "gpt-5-mini"
+    default_model_gemini: str = "gemini-2.5-flash"
+    default_model_perplexity: str = "sonar"
+    default_model_anthropic: str = "claude-sonnet-4-5"
+    default_model_deepseek: str = "deepseek-chat"
+    default_model_grok: str = "grok-3-mini"
     default_humanizer_provider: str = "openai"
     default_humanizer_model: str = "gpt-5-mini"
     enable_provider_anthropic: bool = True
@@ -21,7 +27,11 @@ class Settings(BaseSettings):
     enable_provider_perplexity: bool = True
     request_text_max_chars: int = 250000
     batch_max_items: int = 20
+    provider_request_timeout_seconds: float = 60.0
     allow_stub_providers_without_keys: bool = False
+    openai_base_url: str = "https://api.openai.com/v1"
+    gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
+    perplexity_base_url: str = "https://api.perplexity.ai"
     anthropic_api_key: str | None = Field(
         default=None,
         alias="ANTHROPIC_API_KEY",

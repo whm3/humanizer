@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 from humanizer.cli import main
 
@@ -27,7 +28,14 @@ def test_cli_providers_list_outputs_known_providers(capsys) -> None:
     captured = capsys.readouterr()
     payload = json.loads(captured.out)
     assert exit_code == 0
-    assert {item["name"] for item in payload["providers"]} == {"openai", "perplexity"}
+    assert {item["name"] for item in payload["providers"]} == {
+        "anthropic",
+        "deepseek",
+        "gemini",
+        "grok",
+        "openai",
+        "perplexity",
+    }
 
 
 def test_cli_analyze_outputs_normalized_result(capsys) -> None:
@@ -37,4 +45,78 @@ def test_cli_analyze_outputs_normalized_result(capsys) -> None:
     payload = json.loads(captured.out)
     assert exit_code == 0
     assert payload["result"]["profile"] == "ai_detection"
-    assert payload["result"]["provider"] == "openai"
+    assert set(payload["result"]["selected_providers"]) == {
+        "anthropic",
+        "deepseek",
+        "gemini",
+        "grok",
+        "openai",
+        "perplexity",
+    }
+    assert "consensus" in payload["result"]
+    assert "worst_case" in payload["result"]
+    assert "summary" in payload["result"]
+    assert len(payload["result"]["summary"]["humanization_changes"]) >= 1
+
+
+def test_cli_analyze_batch_outputs_mixed_results(tmp_path: Path, capsys) -> None:
+    payload_path = tmp_path / "batch.json"
+    payload_path.write_text(
+        json.dumps(
+            {
+                "items": [
+                    {"text": "Sample input text", "profile": "ai_detection"},
+                    {"text": "Bad profile text", "profile": "not_real"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = main(["analyze-batch", "--file", str(payload_path)])
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert exit_code == 0
+    assert payload["results"][0]["status"] == "success"
+    assert payload["results"][1]["status"] == "error"
+
+
+def test_cli_humanize_outputs_rewrite_and_final_analysis(capsys) -> None:
+    exit_code = main(
+        [
+            "humanize",
+            "--text",
+            "Furthermore, individuals utilize numerous repetitive phrases in order to communicate.",
+            "--threshold",
+            "0.40",
+            "--max-iterations",
+            "2",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert exit_code == 0
+    assert payload["result"]["rewritten_text"]
+    assert len(payload["result"]["iterations"]) >= 1
+    assert "final_analysis" in payload["result"]
+    assert payload["result"]["humanizer_provider"] == "openai"
+    assert payload["result"]["humanizer_model"] == "gpt-5-mini"
+
+
+def test_cli_analyze_code_marks_content_type(capsys) -> None:
+    exit_code = main(
+        [
+            "analyze",
+            "--text",
+            "import os\n\ndef main():\n    return os.getcwd()\n",
+            "--profile",
+            "ai_detection",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert exit_code == 0
+    assert payload["result"]["content_type"] == "code"

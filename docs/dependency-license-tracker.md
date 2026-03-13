@@ -11,11 +11,16 @@ Update this file whenever a new dependency, SDK, library, or copied/adapted upst
 | Item | Type | Version / Ref | Purpose | License | Requirements / Notes |
 | --- | --- | --- | --- | --- | --- |
 | Python | Runtime | 3.13.2 local runtime detected on 2026-03-13 | Local development runtime for the service | PSF | Project target remains Python 3.12+ per spec; confirm final runtime compatibility during implementation. |
-| FastAPI | Planned dependency | TBD | API framework | TBD | Add exact version and license when installed. |
-| Pydantic | Planned dependency | TBD | Schema validation and settings models | TBD | Add exact version and license when installed. |
-| httpx | Planned dependency | TBD | Outbound provider HTTP transport | TBD | Add exact version and license when installed. |
-| uvicorn | Planned dependency | TBD | Local ASGI server | TBD | Add exact version and license when installed. |
-| pytest | Planned dependency | TBD | Test runner | TBD | Add exact version and license when installed. |
+| FastAPI | Dependency | 0.135.1 | API framework | License metadata blank in `pip show` | Verify upstream license before redistribution-sensitive release steps. |
+| Pydantic | Dependency | 2.12.5 | Schema validation and settings models | License metadata blank in `pip show` | Verify upstream license before redistribution-sensitive release steps. |
+| pydantic-settings | Dependency | 2.13.1 | Settings and environment loading | License metadata blank in `pip show` | Verify upstream license before redistribution-sensitive release steps. |
+| httpx | Dependency | 0.28.1 | Outbound HTTP transport | BSD-3-Clause | Used for provider calls and future URL ingestion. |
+| uvicorn | Dependency | 0.41.0 | Local ASGI server | License metadata blank in `pip show` | Verify upstream license before redistribution-sensitive release steps. |
+| pytest | Dev dependency | 8.4.2 | Test runner | MIT | Local automated test execution. |
+| pytest-asyncio | Dev dependency | 0.26.0 | Async pytest support | License metadata blank in `pip show` | Added to support async API test fixtures. |
+| pypdf | Dependency | 5.9.0 | PDF text extraction for supported document inputs | License metadata blank in `pip show` | Verify upstream license before redistribution-sensitive release steps. |
+| python-docx | Dependency | 1.2.0 | DOCX text extraction for supported document inputs | MIT | Pulls in `lxml`. |
+| lxml | Transitive dependency | 6.0.2 | XML processing required by `python-docx` | BSD-3-Clause | Transitive dependency from DOCX support. |
 
 ## Upstream Code Notes
 

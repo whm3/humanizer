@@ -92,3 +92,38 @@ lessons: Capturing a complete baseline early makes later changes easier to revie
 what: Pushed the local main branch to git@github.com:whm3/humanizer.git and established upstream tracking from this environment.
 why: The GitHub repository is being used as the off-machine backup environment for project continuity.
 lessons: If push activity itself must be preserved in the continuity log, the log entry needs to be followed by a small sync commit so the remote reflects the recorded action.
+
+2026-03-13T17:57:18Z | agent=Codex (GPT-5-based coding agent) | type=decision
+what: Use GitHub issues as the remote tracker for project actions, bugs, and functional changes, with PRs used for code-delivery review as work proceeds.
+why: The project now requires off-machine work tracking in addition to the local breadcrumb log so history, active bugs, and implementation changes remain visible in GitHub.
+lessons: A local continuity log is useful for detailed handoff context, but GitHub issues make status and open work easier to manage over time.
+
+2026-03-13T17:59:07Z | agent=Codex (GPT-5-based coding agent) | type=action
+what: Backfilled GitHub issues from the breadcrumb history and synchronized their statuses: closed #1 for repository continuity/bootstrap, closed #3 for standards and process setup, closed #5 for architecture review and planning, left #4 open for the Phase 0 API/CLI scaffold work, and left #2 open for the hanging in-process API test bug.
+why: The user requested that project actions and issues be tracked in GitHub from the beginning, not only in the local breadcrumb log.
+lessons: Backfilling issues works best when breadcrumb entries are grouped into durable workstreams rather than copied one-for-one into GitHub.
+
+2026-03-13T18:08:59Z | agent=Codex (GPT-5-based coding agent) | type=decision
+what: Marked the image, video, and music workflow expansion as a future enhancement rather than an active implementation priority.
+why: The active text workflow, provider expansion, token autodetection, and iterative humanization features need to be stabilized before multimodal work becomes the best use of effort.
+lessons: Broad platform expansion is easier to manage when the current modality is stable enough to serve as a reusable reference pattern.
+
+2026-03-13T18:16:56Z | agent=Codex (GPT-5-based coding agent) | type=decision
+what: Declared the current requirement set sufficient to define MVP and set the rule that new PR requests default to post-MVP unless explicitly marked pre-MVP.
+why: Scope control is needed so the active MVP can converge instead of continually expanding with equal priority.
+lessons: Once MVP is defined, new feature intake needs a default backlog rule or the boundary stops being meaningful.
+
+2026-03-13T18:16:56Z | agent=Codex (GPT-5-based coding agent) | type=action
+what: Added shared document input handling for raw text, Markdown, PDF, DOCX, and code-file extensions; added source-code detection for analysis; blocked humanization for pure code inputs; preserved fenced code blocks when humanizing larger prose documents; updated dependency tracking for the new parser libraries; and validated the changes with targeted local tests (`tests/test_input_loading.py`, `tests/test_analysis_service.py`, `tests/test_cli.py`), which passed 25 tests.
+why: The project requirements now include richer document ingestion plus a safe distinction between prose and source code in the humanization workflow.
+lessons: Mixed-document handling needs content-type detection and rewrite boundaries; treating embedded code the same as surrounding prose causes the wrong behavior even when the overall document should remain humanizable.
+
+2026-03-13T18:20:09Z | agent=Codex (GPT-5-based coding agent) | type=decision
+what: Added rewrite personality/style targeting as a post-MVP feature request, with examples including academic, high school student, college student, and script kiddy.
+why: The rewrite loop will eventually need explicit stylistic control, but under the current scope rule it should not expand the active MVP unless explicitly reclassified as pre-MVP.
+lessons: Once MVP scope is frozen, even clearly useful enhancements should be queued deliberately so they do not quietly become mandatory for first delivery.
+
+2026-03-13T18:29:01Z | agent=Codex (GPT-5-based coding agent) | type=action
+what: Completed a full local automated test run after reconciling the request contract and input-loading flow; the suite passed with 46 tests covering service logic, API routes, CLI behavior, commands, schemas, settings, and input loading.
+why: The branch needed a coherent validation checkpoint before committing and pushing another remote backup snapshot.
+lessons: Integration risk drops sharply once the API, CLI, and ingestion layers are validated together instead of only through targeted subset runs.

@@ -148,7 +148,7 @@ class AnalysisService:
             )
 
         return HumanizeResult(
-            original_text=request.text,
+            original_text=resolve_text_input(request.text, request.input_path, request.input_url),
             rewritten_text=current_text,
             threshold=request.threshold,
             humanizer_provider=humanizer_provider,

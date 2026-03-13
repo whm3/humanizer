@@ -152,3 +152,18 @@ lessons: Converting a broad feature branch into a PR is the point where issue re
 what: Reconciled the GitHub issue tracker against PR #19 by closing the implemented MVP issues (#2, #4, #6, #7, #8, #10, #11, #12, #13, #14, #15, #17), leaving only the explicit post-MVP backlog items open (#9 multimodal workflows, #16 rewrite personalities, #18 local-model backend support).
 why: The open issue list should reflect actual remaining work instead of features already implemented and validated on the feature branch.
 lessons: Issue hygiene matters most after a burst of rapid requirements intake, otherwise the tracker stops matching reality even when the code is progressing well.
+
+2026-03-13T23:05:16Z | agent=Codex (GPT-5-based coding agent) | type=action
+what: Ran a manual smoke-test pass against the current branch using CLI and in-process API calls, covering provider autodetection, aggregate analyze output, iterative humanize behavior, file inputs, source-code detection, mixed prose/code handling, and the API analyze route.
+why: The branch was at the point where real usage-path verification was more valuable than additional speculative development.
+lessons: Manual smoke tests surfaced real integration issues that the automated suite had not covered in the same way, especially around environment-variable naming and file-based CLI inputs.
+
+2026-03-13T23:05:16Z | agent=Codex (GPT-5-based coding agent) | type=action
+what: Fixed two smoke-test regressions: optional text validators now tolerate `None` for file/URL-based requests, and Gemini autodetection now recognizes `HUMANIZER_GEMINI_API_KEY` in addition to the previously supported environment variable names.
+why: File-based analyze/humanize flows were failing in CLI usage, and the newly added Gemini key in `~/.env` was not being detected by the current settings aliases.
+lessons: Environment-variable compatibility and CLI file-input paths need direct smoke coverage because they can fail even when unit and API tests are green.
+
+2026-03-13T23:07:02Z | agent=Codex (GPT-5-based coding agent) | type=action
+what: Added docs/smoke-test-automation.md to document the current smoke-test automation approach, including the automated pytest layer, the manual runtime smoke commands, expected outcomes, and known caveats.
+why: The smoke-test process should be repeatable and visible to future sessions or collaborators rather than reconstructed from terminal history.
+lessons: Runtime validation becomes much easier to maintain once the boundary between automated tests and operator-style smoke checks is written down explicitly.

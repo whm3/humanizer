@@ -101,6 +101,8 @@ def test_cli_humanize_outputs_rewrite_and_final_analysis(capsys) -> None:
     assert payload["result"]["rewritten_text"]
     assert len(payload["result"]["iterations"]) >= 1
     assert "final_analysis" in payload["result"]
+    assert payload["result"]["humanizer_provider"] == "openai"
+    assert payload["result"]["humanizer_model"] == "gpt-5-mini"
 
 
 def test_cli_analyze_code_marks_content_type(capsys) -> None:

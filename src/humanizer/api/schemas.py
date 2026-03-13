@@ -41,6 +41,8 @@ class HumanizeRequest(BaseModel):
     profile: str = "ai_detection"
     provider: str | None = None
     model: str | None = None
+    humanizer_provider: str | None = None
+    humanizer_model: str | None = None
     language_hint: str = "en"
     metadata: dict[str, Any] = Field(default_factory=dict)
     threshold: float = Field(default=0.35, ge=0.0, le=1.0)
@@ -115,6 +117,8 @@ class HumanizeResult(BaseModel):
     original_text: str
     rewritten_text: str
     threshold: float
+    humanizer_provider: str
+    humanizer_model: str
     reached_threshold: bool
     iterations: list[HumanizeIteration]
     final_analysis: AnalyzeAggregateResult

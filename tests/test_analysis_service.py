@@ -120,6 +120,8 @@ def test_humanize_until_threshold_rewrites_text_and_returns_final_analysis() -> 
     assert result.rewritten_text
     assert len(result.iterations) >= 1
     assert result.final_analysis.profile == "ai_detection"
+    assert result.humanizer_provider == "openai"
+    assert result.humanizer_model == "gpt-5-mini"
 
 
 def test_analyze_detects_code_content_and_disables_humanization_summary() -> None:
@@ -173,3 +175,21 @@ def test_humanize_preserves_fenced_code_blocks_inside_prose_documents() -> None:
     )
 
     assert "```python\nimport os\n\ndef main():\n    return os.getcwd()\n```" in result.rewritten_text
+
+
+def test_humanize_allows_humanizer_provider_override() -> None:
+    settings = Settings(allow_stub_providers_without_keys=True)
+    service = AnalysisService(settings, build_provider_registry(settings))
+
+    result = service.humanize_until_threshold(
+        HumanizeRequest(
+            text="Furthermore, individuals utilize numerous repetitive phrases in order to communicate.",
+            threshold=0.40,
+            max_iterations=1,
+            humanizer_provider="gemini",
+            humanizer_model="gemini-2.5-pro",
+        )
+    )
+
+    assert result.humanizer_provider == "gemini"
+    assert result.humanizer_model == "gemini-2.5-pro"

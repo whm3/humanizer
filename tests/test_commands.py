@@ -71,3 +71,5 @@ def test_command_humanize_rewrites_and_returns_iteration_history() -> None:
     assert payload["result"]["rewritten_text"]
     assert len(payload["result"]["iterations"]) >= 1
     assert "final_analysis" in payload["result"]
+    assert payload["result"]["humanizer_provider"] == "openai"
+    assert payload["result"]["humanizer_model"] == "gpt-5-mini"

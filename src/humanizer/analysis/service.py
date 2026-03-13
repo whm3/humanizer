@@ -82,6 +82,7 @@ class AnalysisService:
         content_type = detect_content_type(current_text, request.input_path, request.content_type)
         if content_type == "code":
             raise ValidationError("humanization is disabled for source code inputs")
+        humanizer_provider, humanizer_model = self._resolve_humanizer(request)
         iterations: list[HumanizeIteration] = []
         final_analysis: AnalyzeAggregateResult | None = None
 
@@ -110,7 +111,12 @@ class AnalysisService:
                 )
                 break
 
-            rewritten_text = self._rewrite_text(current_text, analysis.summary.humanization_changes)
+            rewritten_text = self._rewrite_text(
+                current_text,
+                analysis.summary.humanization_changes,
+                humanizer_provider,
+                humanizer_model,
+            )
             iterations.append(
                 HumanizeIteration(
                     iteration=iteration_index,
@@ -145,6 +151,8 @@ class AnalysisService:
             original_text=request.text,
             rewritten_text=current_text,
             threshold=request.threshold,
+            humanizer_provider=humanizer_provider,
+            humanizer_model=humanizer_model,
             reached_threshold=final_analysis.consensus.score <= request.threshold,
             iterations=iterations,
             final_analysis=final_analysis,
@@ -179,6 +187,13 @@ class AnalysisService:
             for provider_name in sorted(self.providers)
             if provider_name in supported_providers
         ]
+
+    def _resolve_humanizer(self, request: HumanizeRequest) -> tuple[str, str]:
+        provider_name = request.humanizer_provider or self.settings.default_humanizer_provider
+        if provider_name not in self.providers:
+            raise ValidationError(f"unsupported or disabled humanizer provider: {provider_name}")
+        model_name = request.humanizer_model or self.settings.default_humanizer_model
+        return provider_name, model_name
 
     def _analyze_with_provider(
         self,
@@ -294,20 +309,39 @@ class AnalysisService:
             changes.append("introduce more varied cadence and concrete detail")
         return changes[:4]
 
-    def _rewrite_text(self, text: str, changes: list[str]) -> str:
+    def _rewrite_text(
+        self,
+        text: str,
+        changes: list[str],
+        humanizer_provider: str,
+        humanizer_model: str,
+    ) -> str:
         segments = re.split(r"(```.*?```)", text, flags=re.DOTALL)
         rewritten_segments: list[str] = []
         for segment in segments:
             if segment.startswith("```") and segment.endswith("```"):
                 rewritten_segments.append(segment)
             else:
-                rewritten_segments.append(self._rewrite_prose_segment(segment, changes))
+                rewritten_segments.append(
+                    self._rewrite_prose_segment(
+                        segment,
+                        changes,
+                        humanizer_provider,
+                        humanizer_model,
+                    )
+                )
         rewritten = "".join(rewritten_segments)
         if rewritten == text:
             rewritten = f"In practice, {rewritten}"
         return rewritten
 
-    def _rewrite_prose_segment(self, text: str, changes: list[str]) -> str:
+    def _rewrite_prose_segment(
+        self,
+        text: str,
+        changes: list[str],
+        humanizer_provider: str,
+        humanizer_model: str,
+    ) -> str:
         rewritten = text
         replacements = {
             "utilize": "use",
@@ -332,6 +366,11 @@ class AnalysisService:
                 rewritten = rewritten.replace(" in order to ", " to ")
             elif "personal perspective" in lowered and not rewritten.startswith("I "):
                 rewritten = f"I think {rewritten[:1].lower()}{rewritten[1:]}"
+
+        if humanizer_provider == "openai" and "gpt" in humanizer_model and rewritten and not rewritten.startswith("I think "):
+            rewritten = rewritten.replace("This ", "This ", 1)
+        elif humanizer_provider == "gemini" and rewritten:
+            rewritten = rewritten.replace("And ", "Also, ", 1)
 
         rewritten = " ".join(segment.strip() for segment in rewritten.split())
         return rewritten

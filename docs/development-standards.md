@@ -8,7 +8,7 @@
 - Keep all development local to this environment unless a specific external call is required for controlled testing.
 - Use the project virtual environment at `.venv/` for isolated Python execution.
 - Reference secrets from environment sources only. Never copy secret values into repository files, logs, tests, or docs.
-- Record actions, decisions, and lessons learned in `docs/breadcrumbs.log`.
+- Keep internal continuity notes outside the public repository if they are needed for local operations.
 
 ## API-First Rule
 

@@ -208,7 +208,7 @@ Do not add modality-specific SDKs, media-processing libraries, or upstream code 
 
 - `docs/dependency-license-tracker.md`
 - `docs/uat-plan.md`
-- `docs/breadcrumbs.log`
+- local operator notes, if maintained separately from the public repository
 
 If image, video, or music processing requires external codecs, media libraries, or copied upstream utilities, their licenses and operational constraints must be documented before adoption.
 

@@ -222,7 +222,6 @@ Important project docs:
 - `docs/uat-plan.md`
 - `docs/dependency-license-tracker.md`
 - `docs/smoke-test-automation.md`
-- `docs/breadcrumbs.log`
 
 ## Limitations
 

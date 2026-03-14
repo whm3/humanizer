@@ -13,7 +13,7 @@ This plan converts the architecture spec into an execution sequence that is prac
 - Return normalized structured responses, not raw provider output.
 - Reference secrets from the environment only; never copy secret values into code, logs, docs, or tests.
 - Keep live provider calls out of normal CI.
-- Treat `docs/breadcrumbs.log` as the continuity record for decisions, actions, and lessons learned.
+- Keep any internal continuity notes outside the public repository.
 
 ## Working Assumptions
 
@@ -175,7 +175,7 @@ This sequence is designed to validate the architecture early. If the second prov
 
 ### Documentation
 
-- keep `docs/breadcrumbs.log` updated throughout implementation
+- keep any internal continuity notes outside the public repository
 - update architecture docs only when design decisions materially change
 - add setup and run instructions once the app skeleton exists
 

@@ -8,7 +8,7 @@ This document complements:
 
 - automated unit and integration coverage in `tests/`
 - the UAT matrix in `docs/uat-plan.md`
-- the continuity log in `docs/breadcrumbs.log`
+- local operator notes, if maintained separately from the public repository
 
 ## Current Smoke-Test Coverage
 

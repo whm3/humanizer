@@ -2,106 +2,109 @@ MAKE YOUR OUTPUT MORE REPLICANT LESS CLANKER
 
 ## Overview
 
-HUMANIZER is a local-first, API-first service for analyzing text and rewriting prose to reduce AI-detection signals while keeping the source meaning intact.
+HUMANIZER is a local-first service for analyzing documents with multiple commercial LLMs and rewriting prose to reduce AI-detection signals without changing the underlying meaning.
 
-The project is built around a provider-agnostic contract:
+The project is built API-first:
 
-- apps and agents can use the HTTP API
+- applications and agents can use the HTTP API
 - local operators can use the CLI
-- major functions are intended to have both API and CLI coverage
+- major workflows are intended to exist in both interfaces
 
-Detection approach:
+This repository does not currently ship a proprietary detector trained on a large labeled corpus of human-written versus AI-written material. Instead, it orchestrates commercial LLM providers, normalizes their judgments, compares their outputs, and applies guarded rewrite loops on top of that provider layer.
 
-- this project does not currently ship a dedicated classifier trained on a large labeled corpus of human-written versus AI-written material
-- instead, it asks commercial LLM providers to evaluate the text and returns normalized results across those providers
-- the current product value is in orchestration, normalization, cross-provider comparison, rewrite iteration, and guardrails rather than a proprietary in-house training regimen
-- in the future, purpose-trained local or hosted models could be added for detection and rewrite review
+The current value is in:
 
-Current live provider-backed detection supports:
+- provider orchestration
+- normalized scoring
+- consensus and worst-case reporting
+- guarded rewrite iteration
+- mixed-document handling
+- local deployment and testing
 
-- `anthropic`
-- `gemini`
-- `openai`
-- `perplexity`
+Future versions may add purpose-trained hosted or local models for detection, review, or rewriting.
 
-Current rewrite-only provider support:
-
-- `grok` is available as a humanization/rewrite provider, but is not currently part of the detection consensus set
-- reason: current Grok detection results on the project fixture set are not calibrated enough for consensus use yet; it showed both false positives on known human material and misses on some synthetic samples, so it is safer to keep it on the rewrite side while evaluation continues
-
-Post-MVP provider scaffolding still exists for `deepseek`, but it is not enabled by default and is not part of the current live MVP surface.
-
-The service can:
-
-- analyze text with one provider or all detected providers
-- return per-provider results plus `consensus` and `worst_case`
-- summarize detection trends and AI evidence
-- produce humanization guidance
-- iteratively rewrite prose and re-run detection until a threshold or iteration limit is reached
-
-## Current Status
-
-This repository is in active MVP development.
+## Current Scope
 
 Implemented now:
 
 - FastAPI API and matching CLI
 - multi-provider detection
 - provider autodetection from environment variables
-- raw text, Markdown, PDF, DOCX, local file, and URL input handling
+- provider preflight/status checks before longer runs
+- raw text, Markdown, PDF, DOCX, URL, and local file input handling
 - source-code analysis support
-- fenced code block preservation inside mixed prose documents
-- provider-backed rewrite path for prose humanization
-- rewrite review guardrails to reduce hallucinated additions
+- prose-plus-code handling with fenced code block preservation
+- iterative prose humanization with re-analysis
+- rewrite validation with a secondary provider
+- local token-usage logging
 
 Still being tuned:
 
-- rewrite effectiveness on highly polished rhetorical prose
-- runtime cost and latency of multi-provider rewrite review
-- handling of temporary provider unavailability under heavy live usage
+- rewrite effectiveness on polished synthetic prose
+- latency and cost of multi-provider rewrite loops
+- detector calibration on ambiguous or highly polished samples
+
+## Providers
+
+Current detection providers:
+
+- `anthropic`
+- `gemini`
+- `openai`
+- `perplexity`
+
+Current rewrite-capable providers:
+
+- `anthropic`
+- `gemini`
+- `grok`
+- `openai`
+- `perplexity`
+
+`grok` is currently rewrite-only. It is not part of the detection consensus set because its detector behavior on the project fixture set is not calibrated enough for release use yet.
+
+`deepseek` scaffolding exists but is not part of the current MVP provider surface.
 
 ## Repository Layout
 
 - `src/humanizer/` application code
-- `tests/` automated test suite
-- `docs/` architecture, plans, UAT, dependency/license tracking, smoke-test notes, and breadcrumb log
-- `testdocs/` local smoke-test fixtures
+- `tests/` automated tests
+- `docs/` architecture, plans, UAT, smoke-test notes, and dependency/license tracking
+- `testdocs/` sample fixtures for calibration and smoke testing
 
 ## Requirements
 
 - Python `3.12+`
-- project-local virtual environment
-- provider API keys in `~/.env` or `.env`
+- a project-local virtual environment
+- provider API keys supplied through the environment or `~/.env`
 
-Current environment variables used by the app include:
+The app can consume keys from variables including:
 
 - `OPENAI_API_KEY`
 - `PERPLEXITY_API_KEY`
+- `HUMANIZER_GEMINI_PAID_KEY`
 - `GEMINI_API_KEY`
 - `GOOGLE_API_KEY`
-- `HUMANIZER_GEMINI_PAID_KEY`
 - `HUMANIZER_GEMINI_API_KEY`
 - `HUMANIZER_ANTHROPIC_PAID_KEY`
 - `ANTHROPIC_API_KEY`
-- `DEEPSEEK_API_KEY`
+- `HUMANIZER_GROK_PAID_KEY`
+- `HUMANIZER_GROK_KEY`
 - `GROK_API_KEY`
 - `XAI_API_KEY`
 
-Detection currently uses `anthropic`, `gemini`, `openai`, and `perplexity`.
-`grok` is currently enabled for rewrite experimentation, not for detection consensus.
-
-Secrets are referenced from the environment only and should not be copied into repository files, logs, or docs.
+Secrets should remain in local environment files or environment variables only. Do not copy them into tracked source, docs, fixtures, or logs.
 
 ## Setup
 
-Create and activate the local virtual environment:
+Create and activate the virtual environment:
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 ```
 
-Install the project and dev dependencies:
+Install the project and development dependencies:
 
 ```bash
 ./.venv/bin/pip install -e '.[dev]'
@@ -109,7 +112,7 @@ Install the project and dev dependencies:
 
 ## Running
 
-Run the API locally:
+Run the API:
 
 ```bash
 ./.venv/bin/uvicorn humanizer.api.app:app --reload
@@ -121,10 +124,10 @@ Run the CLI:
 ./.venv/bin/python -m humanizer.cli --help
 ```
 
-List detected providers:
+Check provider availability before a live run:
 
 ```bash
-./.venv/bin/python -m humanizer.cli providers list
+./.venv/bin/python -m humanizer.cli providers check
 ```
 
 Analyze inline text:
@@ -144,6 +147,14 @@ Humanize a local document:
   --max-iterations 2
 ```
 
+Use the faster lower-fanout mode for interactive runs:
+
+```bash
+./.venv/bin/python -m humanizer.cli analyze \
+  --input-file testdocs/greenwald.txt \
+  --fast-mode
+```
+
 ## API
 
 Current routes:
@@ -151,6 +162,7 @@ Current routes:
 - `GET /v1/health`
 - `GET /v1/version`
 - `GET /v1/providers`
+- `GET /v1/providers/status`
 - `POST /v1/analyze`
 - `POST /v1/analyze/batch`
 - `POST /v1/humanize`
@@ -160,7 +172,8 @@ Example analyze request:
 ```json
 {
   "text": "Sample text to analyze.",
-  "profile": "ai_detection"
+  "profile": "ai_detection",
+  "fast_mode": false
 }
 ```
 
@@ -173,25 +186,76 @@ Example humanize request:
   "threshold": 0.4,
   "max_iterations": 2,
   "humanizer_provider": "openai",
-  "humanizer_model": "gpt-5-mini"
+  "humanizer_model": "gpt-5-mini",
+  "fast_mode": true
 }
 ```
 
-## Input Types
+## Input Handling
 
-Supported text inputs currently include:
+Supported inputs include:
 
 - raw text
 - Markdown
 - PDF
 - DOCX
+- plain text files
 - source code files
 - fetched URLs
 
-Content typing behavior:
+Content rules:
 
 - pure source code can be analyzed but is not humanized
-- prose documents with fenced code blocks keep those blocks unchanged during rewrite
+- prose documents that contain fenced code blocks keep those blocks unchanged during rewrite
+- long prose documents are rewritten section-by-section using a shared document-level rewrite brief to reduce visible chunking
+
+## Detection And Rewrite Model
+
+Detection is probabilistic. Results can differ across providers, and polished AI-generated material can still score as likely human on some detectors.
+
+To make that uncertainty visible, the service returns:
+
+- per-provider results
+- a `consensus` result
+- a `worst_case` result
+- summary text for detections, trends, and evidence
+
+Rewrite is also guarded:
+
+- one provider generates the rewrite
+- at least one different provider validates it
+- unsupported additions can cause the rewrite to be rejected
+- debug mode can expose accepted, rejected, unchanged, or skipped rewrite states plus candidate rewrites
+
+## Logging
+
+Set `HUMANIZER_LOG_LEVEL=DEBUG` or `LOG_LEVEL=DEBUG` to increase runtime visibility.
+
+Debug logging includes:
+
+- provider request attempts
+- retries and provider failures
+- humanization iteration progress
+- provider preflight failures
+
+Debug logging does not include:
+
+- secret values
+- full prompt bodies
+- full source document contents
+
+## Token Usage Tracking
+
+Live provider calls can write local token usage records to `.local/token-usage.jsonl`.
+
+This file is ignored by Git and is intended for local quota and cost tracking only.
+
+Relevant settings:
+
+```bash
+TOKEN_USAGE_LOG_ENABLED=true
+TOKEN_USAGE_LOG_PATH=.local/token-usage.jsonl
+```
 
 ## Testing
 
@@ -201,66 +265,25 @@ Run the automated suite:
 ./.venv/bin/pytest
 ```
 
-Live provider calls also write a local token-usage log to `.local/token-usage.jsonl` by default.
-That file is ignored by Git and is intended only for local quota and cost tracking.
-
-You can change or disable it with:
-
-```bash
-TOKEN_USAGE_LOG_ENABLED=true
-TOKEN_USAGE_LOG_PATH=.local/token-usage.jsonl
-```
-
-The current local suite covers:
+The current automated coverage includes:
 
 - settings and provider autodetection
 - API routes
 - CLI behavior
-- analysis service behavior
+- analysis orchestration
 - input loading
 - rewrite guardrails
+- provider preflight/status checks
 
-For runtime smoke procedures, see:
-
-- `docs/smoke-test-automation.md`
-
-## Provider Notes
-
-Detection:
-
-- `openai`, `gemini`, and `perplexity` are live-backed today when keys are configured
-- offline tests use deterministic stub adapters
-
-Rewrite:
-
-- provider-backed rewrite is enabled
-- rewritten prose is reviewed before acceptance
-- additions are only accepted if all active review providers support them as grounded in the source/context
-
-Modeling note:
-
-- current detection behavior depends on the judgment of commercial LLMs, not a bespoke supervised detector trained by this repository
-- future versions may add dedicated trained models or local fine-tuned models if the project moves beyond the current provider-orchestration approach
-
-Operational note:
-
-- free-tier Gemini quotas were too restrictive for the current multi-pass rewrite/review flow
-- paid Gemini quota materially improved runtime stability during live smoke testing
+For runtime smoke procedures, see [`docs/smoke-test-automation.md`](docs/smoke-test-automation.md).
 
 ## Documentation
 
 Important project docs:
 
-- `docs/textguard-rewrite-architecture.md`
-- `docs/project-plan.md`
-- `docs/development-standards.md`
-- `docs/uat-plan.md`
-- `docs/dependency-license-tracker.md`
-- `docs/smoke-test-automation.md`
-
-## Limitations
-
-- rewrite quality is still being tuned for difficult rhetorical content
-- strict review guardrails can reject aggressive rewrites and slow convergence
-- multimodal image/video/music workflows are future work, not active MVP scope
-- some development fixtures in `testdocs/` are intended for local validation and may not ship as release artifacts
+- [`docs/textguard-rewrite-architecture.md`](docs/textguard-rewrite-architecture.md)
+- [`docs/project-plan.md`](docs/project-plan.md)
+- [`docs/development-standards.md`](docs/development-standards.md)
+- [`docs/uat-plan.md`](docs/uat-plan.md)
+- [`docs/dependency-license-tracker.md`](docs/dependency-license-tracker.md)
+- [`docs/smoke-test-automation.md`](docs/smoke-test-automation.md)

@@ -116,6 +116,9 @@ class HumanizeIteration(BaseModel):
     input_text: str
     output_text: str
     applied_changes: list[str]
+    rewrite_status: Literal["accepted", "rejected", "unchanged", "skipped"]
+    rewrite_rejection_reason: str | None = None
+    candidate_rewrites: list[dict[str, Any]] = Field(default_factory=list)
     analysis: AnalyzeAggregateResult
 
 

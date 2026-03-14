@@ -124,6 +124,7 @@ def test_humanize_until_threshold_rewrites_text_and_returns_final_analysis() -> 
     assert result.final_analysis.profile == "ai_detection"
     assert result.humanizer_provider == "openai"
     assert result.humanizer_model == "gpt-5-mini"
+    assert result.iterations[0].rewrite_status in {"accepted", "rejected", "unchanged", "skipped"}
 
 
 def test_analyze_detects_code_content_and_disables_humanization_summary() -> None:
@@ -177,6 +178,50 @@ def test_humanize_preserves_fenced_code_blocks_inside_prose_documents() -> None:
     )
 
     assert "```python\nimport os\n\ndef main():\n    return os.getcwd()\n```" in result.rewritten_text
+
+
+def test_rewrite_rejection_is_exposed_with_candidates_in_debug_mode() -> None:
+    class RejectingReviewProvider:
+        def __init__(self):
+            self.name = "reviewer"
+            self.default_model = "stub"
+
+        def analyze(self, request):
+            from humanizer.providers.base import ProviderResult
+
+            return ProviderResult(
+                label="likely_ai_assisted",
+                score=0.72,
+                confidence="medium",
+                signals=["high structural regularity"],
+                explanation="stub",
+            )
+
+        def rewrite(self, request):
+            return "This is a rewritten paragraph with extra unsupported claims."
+
+        def review_rewrite(self, request: RewriteReviewRequest) -> RewriteReviewResult:
+            return RewriteReviewResult(
+                supported=False,
+                confidence="high",
+                issues=["unsupported addition"],
+                explanation="stub rejection",
+            )
+
+    service = AnalysisService(Settings(log_level="DEBUG"), {"openai": RejectingReviewProvider(), "anthropic": RejectingReviewProvider()})
+
+    result = service.humanize_until_threshold(
+        HumanizeRequest(
+            text="This is a plain paragraph.",
+            provider="openai",
+            humanizer_provider="openai",
+            max_iterations=1,
+        )
+    )
+
+    assert result.iterations[0].rewrite_status == "rejected"
+    assert result.iterations[0].rewrite_rejection_reason is not None
+    assert len(result.iterations[0].candidate_rewrites) >= 1
 
 
 def test_humanize_allows_humanizer_provider_override() -> None:
@@ -362,16 +407,22 @@ def test_rewrite_guardrails_require_consensus_for_additions() -> None:
     original = "Registering matters because it shows commitment."
     rewritten = "Registering matters because 18 to 25 year olds must file within 30 days."
 
-    guarded = service._apply_rewrite_guardrails(original, rewritten, ["openai", "gemini"], "en")
+    guarded, rejection_reason = service._apply_rewrite_guardrails(
+        original,
+        rewritten,
+        ["openai", "gemini"],
+        "en",
+    )
 
     assert guarded == original
+    assert rejection_reason == "alternate provider validation rejected the rewrite"
 
 
 def test_rewrite_guardrails_require_secondary_provider_validation() -> None:
     settings = Settings()
     service = AnalysisService(settings, {})
 
-    guarded = service._apply_rewrite_guardrails(
+    guarded, rejection_reason = service._apply_rewrite_guardrails(
         "This is the original paragraph.",
         "This is the rewritten paragraph.",
         [],
@@ -379,6 +430,7 @@ def test_rewrite_guardrails_require_secondary_provider_validation() -> None:
     )
 
     assert guarded == "This is the original paragraph."
+    assert rejection_reason == "no alternate validation provider available"
 
 
 def test_rewrite_review_provider_selection_excludes_humanizer_provider() -> None:

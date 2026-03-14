@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field
 from time import perf_counter
 from uuid import uuid4
 
@@ -32,6 +33,14 @@ from humanizer.providers.base import (
 
 logger = logging.getLogger(__name__)
 SECTION_REWRITE_MAX_CHARS = 3500
+
+
+@dataclass
+class RewriteOutcome:
+    text: str
+    status: str
+    rejection_reason: str | None = None
+    candidates: list[dict[str, object]] = field(default_factory=list)
 
 
 class AnalysisService:
@@ -189,12 +198,15 @@ class AnalysisService:
                         input_text=current_text,
                         output_text=current_text,
                         applied_changes=[],
+                        rewrite_status="skipped",
+                        rewrite_rejection_reason=None,
+                        candidate_rewrites=[],
                         analysis=analysis,
                     )
                 )
                 break
 
-            rewritten_text = self._rewrite_text(
+            rewrite_outcome = self._rewrite_text(
                 current_text,
                 analysis.summary.humanization_changes,
                 analysis.consensus.signals,
@@ -211,17 +223,21 @@ class AnalysisService:
                 HumanizeIteration(
                     iteration=iteration_index,
                     input_text=current_text,
-                    output_text=rewritten_text,
+                    output_text=rewrite_outcome.text,
                     applied_changes=analysis.summary.humanization_changes,
+                    rewrite_status=rewrite_outcome.status,
+                    rewrite_rejection_reason=rewrite_outcome.rejection_reason,
+                    candidate_rewrites=rewrite_outcome.candidates if self._debug_enabled() else [],
                     analysis=analysis,
                 )
             )
-            current_text = rewritten_text
+            current_text = rewrite_outcome.text
             logger.debug(
-                "humanize.iteration iteration=%d prior_score=%.4f rewritten_changed=%s",
+                "humanize.iteration iteration=%d prior_score=%.4f rewrite_status=%s rewritten_changed=%s",
                 iteration_index,
                 analysis.consensus.score,
-                rewritten_text.strip() != iterations[-1].input_text.strip(),
+                rewrite_outcome.status,
+                rewrite_outcome.text.strip() != iterations[-1].input_text.strip(),
             )
 
         if final_analysis is None:
@@ -483,9 +499,13 @@ class AnalysisService:
         prior_score: float,
         target_score: float,
         fast_mode: bool,
-    ) -> str:
+    ) -> RewriteOutcome:
         segments = text.split("```")
         rewritten_segments: list[str] = []
+        all_candidates: list[dict[str, object]] = []
+        any_accepted = False
+        any_rejected = False
+        rejection_reasons: list[str] = []
         rewrite_review_providers = self._select_rewrite_review_providers(
             review_provider_names,
             humanizer_provider,
@@ -498,8 +518,7 @@ class AnalysisService:
                 continue
             prose_sections = self._split_rewrite_sections(segment)
             if len(prose_sections) <= 1:
-                rewritten_segments.append(
-                    self._rewrite_prose_segment(
+                outcome = self._rewrite_prose_segment(
                         segment,
                         changes,
                         signals,
@@ -515,7 +534,12 @@ class AnalysisService:
                         0,
                         1,
                     )
-                )
+                rewritten_segments.append(outcome.text)
+                all_candidates.extend(outcome.candidates)
+                any_accepted = any_accepted or outcome.status == "accepted"
+                any_rejected = any_rejected or outcome.status == "rejected"
+                if outcome.rejection_reason:
+                    rejection_reasons.append(outcome.rejection_reason)
                 continue
             rewritten_sections = [
                 self._rewrite_prose_segment(
@@ -536,8 +560,22 @@ class AnalysisService:
                 )
                 for section_index, prose_section in enumerate(prose_sections)
             ]
-            rewritten_segments.append(self._smooth_rewritten_sections(rewritten_sections))
-        return "".join(rewritten_segments)
+            rewritten_segments.append(self._smooth_rewritten_sections([item.text for item in rewritten_sections]))
+            for outcome in rewritten_sections:
+                all_candidates.extend(outcome.candidates)
+                any_accepted = any_accepted or outcome.status == "accepted"
+                any_rejected = any_rejected or outcome.status == "rejected"
+                if outcome.rejection_reason:
+                    rejection_reasons.append(outcome.rejection_reason)
+        status = "accepted" if any_accepted else ("rejected" if any_rejected else "unchanged")
+        rejection_reason = "; ".join(dict.fromkeys(rejection_reasons)) or None
+        final_text = "".join(rewritten_segments)
+        return RewriteOutcome(
+            text=final_text,
+            status=status,
+            rejection_reason=rejection_reason,
+            candidates=all_candidates if self._debug_enabled() else [],
+        )
 
     def _rewrite_prose_segment(
         self,
@@ -555,9 +593,10 @@ class AnalysisService:
         rewrite_brief: str,
         section_index: int,
         section_total: int,
-    ) -> str:
+    ) -> RewriteOutcome:
         if not text.strip():
-            return text
+            return RewriteOutcome(text=text, status="unchanged")
+        candidates: list[dict[str, object]] = []
         rewritten = self.providers[humanizer_provider].rewrite(
             RewriteRequest(
                 text=text,
@@ -576,22 +615,46 @@ class AnalysisService:
                 },
             )
         )
+        self._record_candidate(candidates, "provider", rewritten)
         if not rewritten.strip():
             rewritten = text
-        guarded = self._apply_rewrite_guardrails(text, rewritten, review_provider_names, language_hint)
+        guarded, rejection_reason = self._apply_rewrite_guardrails(
+            text,
+            rewritten,
+            review_provider_names,
+            language_hint,
+        )
+        self._record_candidate(candidates, "guarded", guarded, rejection_reason)
         if (
             guarded.strip() == text.strip()
             and prior_score > (target_score + 0.20)
         ):
             fallback = self._apply_safe_fallback_rewrite(text, changes, signals)
             if fallback.strip() != text.strip():
-                guarded = self._apply_rewrite_guardrails(
+                self._record_candidate(candidates, "fallback", fallback)
+                guarded, fallback_reason = self._apply_rewrite_guardrails(
                     text,
                     fallback,
                     review_provider_names,
                     language_hint,
                 )
-        return guarded
+                self._record_candidate(candidates, "fallback_guarded", guarded, fallback_reason)
+                if fallback_reason and not rejection_reason:
+                    rejection_reason = fallback_reason
+        if guarded.strip() == text.strip():
+            status = "rejected" if rejection_reason else "unchanged"
+            return RewriteOutcome(
+                text=text,
+                status=status,
+                rejection_reason=rejection_reason,
+                candidates=candidates if self._debug_enabled() else [],
+            )
+        return RewriteOutcome(
+            text=guarded,
+            status="accepted",
+            rejection_reason=None,
+            candidates=candidates if self._debug_enabled() else [],
+        )
 
     def _apply_rewrite_guardrails(
         self,
@@ -599,8 +662,9 @@ class AnalysisService:
         rewritten_text: str,
         review_provider_names: list[str],
         language_hint: str,
-    ) -> str:
+    ) -> tuple[str, str | None]:
         sanitized = rewritten_text
+        rejection_reason: str | None = None
 
         if not _contains_citation_markers(original_text):
             sanitized = _strip_citation_markers(sanitized)
@@ -610,10 +674,10 @@ class AnalysisService:
             sanitized = _strip_reference_sections(sanitized)
 
         if sanitized.strip() == original_text.strip():
-            return original_text
+            return original_text, "guardrails removed unsupported additions or no material change remained"
 
         if not review_provider_names:
-            return original_text
+            return original_text, "no alternate validation provider available"
 
         if not self._rewrite_has_provider_consensus(
             original_text,
@@ -621,9 +685,11 @@ class AnalysisService:
             review_provider_names,
             language_hint,
         ):
-            return original_text
+            rejection_reason = "alternate provider validation rejected the rewrite"
+            logger.debug("rewrite.rejected reason=%s", rejection_reason)
+            return original_text, rejection_reason
 
-        return sanitized.strip() or original_text
+        return sanitized.strip() or original_text, None
 
     def _select_rewrite_review_providers(
         self,
@@ -860,6 +926,26 @@ class AnalysisService:
                     return False
                 self._rewrite_review_cache[(provider_name, original_text, rewritten_text)] = True
         return True
+
+    def _record_candidate(
+        self,
+        candidates: list[dict[str, object]],
+        stage: str,
+        text: str,
+        rejection_reason: str | None = None,
+    ) -> None:
+        if not self._debug_enabled():
+            return
+        candidates.append(
+            {
+                "stage": stage,
+                "text": text[:2000],
+                "rejection_reason": rejection_reason,
+            }
+        )
+
+    def _debug_enabled(self) -> bool:
+        return self.settings.log_level.upper() == "DEBUG"
 
 
 def _contains_citation_markers(text: str) -> bool:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from time import perf_counter
 from uuid import uuid4
 
@@ -45,6 +46,13 @@ class AnalysisService:
             raise ValidationError("text exceeds configured limit")
         profile = get_profile(request.profile)
         selected_providers = self._resolve_providers(request, profile.supported_providers)
+        available_override = request.metadata.get("_available_providers")
+        if isinstance(available_override, list) and request.provider is None:
+            selected_providers = [
+                provider_name
+                for provider_name in selected_providers
+                if provider_name in available_override
+            ]
         if not selected_providers:
             raise ValidationError("no enabled providers with configured credentials are available")
         logger.debug(
@@ -58,23 +66,28 @@ class AnalysisService:
         started = perf_counter()
         source_results: list[AnalyzeResult] = []
         transient_failures: list[str] = []
-        for provider_name in selected_providers:
-            try:
-                source_results.append(
-                    self._analyze_with_provider(
-                        provider_name=provider_name,
-                        request=request,
-                        input_text=input_text,
-                        content_type=content_type,
-                        profile_name=profile.name,
-                        system_prompt=profile.system_prompt,
-                    )
-                )
-            except ProviderTransientError:
-                if request.provider is not None:
-                    raise
-                transient_failures.append(provider_name)
-                logger.warning("analyze.provider_unavailable provider=%s", provider_name)
+        with ThreadPoolExecutor(max_workers=min(len(selected_providers), 5) or 1) as executor:
+            futures = {
+                executor.submit(
+                    self._analyze_with_provider,
+                    provider_name=provider_name,
+                    request=request,
+                    input_text=input_text,
+                    content_type=content_type,
+                    profile_name=profile.name,
+                    system_prompt=profile.system_prompt,
+                ): provider_name
+                for provider_name in selected_providers
+            }
+            for future in as_completed(futures):
+                provider_name = futures[future]
+                try:
+                    source_results.append(future.result())
+                except ProviderTransientError:
+                    if request.provider is not None:
+                        raise
+                    transient_failures.append(provider_name)
+                    logger.warning("analyze.provider_unavailable provider=%s", provider_name)
         if not source_results:
             if transient_failures:
                 raise ValidationError(
@@ -92,6 +105,7 @@ class AnalysisService:
             ",".join(result.provider for result in source_results),
         )
 
+        source_results.sort(key=lambda result: result.provider)
         return AnalyzeAggregateResult(
             content_type=content_type,
             profile=profile.name,
@@ -123,6 +137,25 @@ class AnalysisService:
         if content_type == "code":
             raise ValidationError("humanization is disabled for source code inputs")
         humanizer_provider, humanizer_model = self._resolve_humanizer(request)
+        profile = get_profile(request.profile)
+        requested_detection_providers = self._resolve_providers(
+            AnalyzeRequest(
+                text=current_text,
+                content_type=content_type,
+                profile=request.profile,
+                provider=request.provider,
+                model=request.model,
+                fast_mode=request.fast_mode,
+                language_hint=request.language_hint,
+                metadata=request.metadata,
+            ),
+            profile.supported_providers,
+        )
+        available_detection_providers = self._preflight_available_providers(
+            requested_detection_providers,
+            content_type,
+            request.language_hint,
+        )
         logger.debug(
             "humanize.start profile=%s provider=%s model=%s threshold=%.2f max_iterations=%d",
             request.profile,
@@ -142,8 +175,9 @@ class AnalysisService:
                     profile=request.profile,
                     provider=request.provider,
                     model=request.model,
+                    fast_mode=request.fast_mode,
                     language_hint=request.language_hint,
-                    metadata=request.metadata,
+                    metadata={**request.metadata, "_available_providers": available_detection_providers},
                 )
             )
             final_analysis = analysis
@@ -170,6 +204,7 @@ class AnalysisService:
                 iteration_index,
                 analysis.consensus.score,
                 request.threshold,
+                request.fast_mode,
             )
             iterations.append(
                 HumanizeIteration(
@@ -195,6 +230,11 @@ class AnalysisService:
             current_text = iterations[-1].output_text
 
         if final_analysis.consensus.score > request.threshold:
+            available_providers = self._preflight_available_providers(
+                final_analysis.selected_providers,
+                content_type,
+                request.language_hint,
+            )
             final_analysis = self.analyze(
                 AnalyzeRequest(
                     text=current_text,
@@ -202,8 +242,9 @@ class AnalysisService:
                     profile=request.profile,
                     provider=request.provider,
                     model=request.model,
+                    fast_mode=request.fast_mode,
                     language_hint=request.language_hint,
-                    metadata=request.metadata,
+                    metadata={**request.metadata, "_available_providers": available_providers},
                 )
             )
 
@@ -274,11 +315,14 @@ class AnalysisService:
                 )
             return [request.provider]
 
-        return [
+        provider_names = [
             provider_name
             for provider_name in sorted(self.providers)
             if provider_name in supported_providers
         ]
+        if request.fast_mode:
+            return self._limit_fast_mode_providers(provider_names)
+        return provider_names
 
     def _resolve_humanizer(self, request: HumanizeRequest) -> tuple[str, str]:
         provider_name = request.humanizer_provider or self.settings.default_humanizer_provider
@@ -437,12 +481,14 @@ class AnalysisService:
         iteration_index: int,
         prior_score: float,
         target_score: float,
+        fast_mode: bool,
     ) -> str:
         segments = text.split("```")
         rewritten_segments: list[str] = []
         rewrite_review_providers = self._select_rewrite_review_providers(
             review_provider_names,
             humanizer_provider,
+            fast_mode,
         )
         for index, segment in enumerate(segments):
             if index % 2 == 1:
@@ -460,6 +506,7 @@ class AnalysisService:
                     iteration_index,
                     prior_score,
                     target_score,
+                    fast_mode,
                 )
             )
         return "".join(rewritten_segments)
@@ -476,6 +523,7 @@ class AnalysisService:
         iteration_index: int,
         prior_score: float,
         target_score: float,
+        fast_mode: bool,
     ) -> str:
         if not text.strip():
             return text
@@ -546,10 +594,53 @@ class AnalysisService:
         self,
         provider_names: list[str],
         humanizer_provider: str,
+        fast_mode: bool,
     ) -> list[str]:
-        return [
+        review_providers = [
             provider_name for provider_name in provider_names if provider_name != humanizer_provider
         ]
+        if fast_mode:
+            return review_providers[:1]
+        return review_providers
+
+    def _limit_fast_mode_providers(self, provider_names: list[str]) -> list[str]:
+        preferred_order = ["anthropic", "openai", "gemini", "perplexity"]
+        preferred = [provider for provider in preferred_order if provider in provider_names]
+        if preferred:
+            return preferred[:2]
+        return provider_names[:2]
+
+    def _preflight_available_providers(
+        self,
+        provider_names: list[str],
+        content_type: str,
+        language_hint: str,
+    ) -> list[str]:
+        available: list[str] = []
+        with ThreadPoolExecutor(max_workers=min(len(provider_names), 5) or 1) as executor:
+            futures = {
+                executor.submit(
+                    self.providers[provider_name].analyze,
+                    ProviderRequest(
+                        text="Preflight availability probe.",
+                        profile_name="ai_detection",
+                        language_hint=language_hint,
+                        content_type=content_type,
+                        system_prompt="Classify the text for likely AI assistance and return normalized scoring signals.",
+                        model=self.providers[provider_name].default_model,
+                        metadata={"preflight": True},
+                    ),
+                ): provider_name
+                for provider_name in provider_names
+            }
+            for future in as_completed(futures):
+                provider_name = futures[future]
+                try:
+                    future.result()
+                    available.append(provider_name)
+                except Exception as exc:
+                    logger.warning("provider.preflight_unavailable provider=%s detail=%s", provider_name, exc)
+        return sorted(available)
 
     def _apply_safe_fallback_rewrite(
         self,
@@ -626,32 +717,46 @@ class AnalysisService:
         review_provider_names: list[str],
         language_hint: str,
     ) -> bool:
+        pending: list[str] = []
         for provider_name in review_provider_names:
             cache_key = (provider_name, original_text, rewritten_text)
             cached = self._rewrite_review_cache.get(cache_key)
-            if cached is not None:
-                if not cached:
-                    return False
+            if cached is False:
+                return False
+            if cached is True:
                 continue
-            provider = self.providers[provider_name]
-            try:
-                review = provider.review_rewrite(
+            pending.append(provider_name)
+        if not pending:
+            return True
+
+        with ThreadPoolExecutor(max_workers=min(len(pending), 4) or 1) as executor:
+            futures = {
+                executor.submit(
+                    self.providers[provider_name].review_rewrite,
                     RewriteReviewRequest(
                         source_text=original_text,
                         rewritten_text=rewritten_text,
                         language_hint=language_hint,
-                        model=provider.default_model,
+                        model=self.providers[provider_name].default_model,
                         metadata={},
-                    )
-                )
-            except ProviderTransientError:
-                return False
-            except Exception:
-                return False
-            if not review.supported:
-                self._rewrite_review_cache[cache_key] = False
-                return False
-            self._rewrite_review_cache[cache_key] = True
+                    ),
+                ): provider_name
+                for provider_name in pending
+            }
+            for future in as_completed(futures):
+                provider_name = futures[future]
+                try:
+                    review = future.result()
+                except ProviderTransientError:
+                    self._rewrite_review_cache[(provider_name, original_text, rewritten_text)] = False
+                    return False
+                except Exception:
+                    self._rewrite_review_cache[(provider_name, original_text, rewritten_text)] = False
+                    return False
+                if not review.supported:
+                    self._rewrite_review_cache[(provider_name, original_text, rewritten_text)] = False
+                    return False
+                self._rewrite_review_cache[(provider_name, original_text, rewritten_text)] = True
         return True
 
 

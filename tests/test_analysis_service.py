@@ -214,6 +214,31 @@ def test_humanize_uses_provider_default_model_when_humanizer_model_is_not_set() 
     assert result.humanizer_model == "grok-3-mini"
 
 
+def test_analyze_fast_mode_limits_default_provider_fanout() -> None:
+    settings = Settings(allow_stub_providers_without_keys=True)
+    service = AnalysisService(settings, build_provider_registry(settings))
+
+    result = service.analyze(
+        AnalyzeRequest(text="A basic sentence for testing.", profile="ai_detection", fast_mode=True)
+    )
+
+    assert set(result.selected_providers).issubset(ALL_STUB_PROVIDERS)
+    assert len(result.selected_providers) == 2
+
+
+def test_humanize_fast_mode_uses_single_review_provider() -> None:
+    settings = Settings(allow_stub_providers_without_keys=True, enable_provider_grok=True)
+    service = AnalysisService(settings, build_provider_registry(settings))
+
+    reviewers = service._select_rewrite_review_providers(
+        ["anthropic", "gemini", "openai", "perplexity"],
+        "openai",
+        True,
+    )
+
+    assert len(reviewers) == 1
+
+
 def test_analyze_rejects_rewrite_only_provider_for_detection() -> None:
     settings = Settings(allow_stub_providers_without_keys=True)
     service = AnalysisService(settings, build_provider_registry(settings))
@@ -314,6 +339,7 @@ def test_rewrite_review_provider_selection_excludes_humanizer_provider() -> None
     reviewers = service._select_rewrite_review_providers(
         ["openai", "gemini", "perplexity"],
         "openai",
+        False,
     )
 
     assert reviewers == ["gemini", "perplexity"]

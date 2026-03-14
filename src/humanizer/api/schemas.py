@@ -11,6 +11,7 @@ class AnalyzeRequest(BaseModel):
     profile: str
     provider: str | None = None
     model: str | None = None
+    fast_mode: bool = False
     language_hint: str = "en"
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -43,6 +44,7 @@ class HumanizeRequest(BaseModel):
     profile: str = "ai_detection"
     provider: str | None = None
     model: str | None = None
+    fast_mode: bool = False
     humanizer_provider: str | None = None
     humanizer_model: str | None = None
     language_hint: str = "en"

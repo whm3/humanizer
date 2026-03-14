@@ -33,6 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
     analyze_parser.add_argument("--content-type", default="auto", choices=["auto", "text", "code"])
     analyze_parser.add_argument("--provider")
     analyze_parser.add_argument("--model")
+    analyze_parser.add_argument("--fast-mode", action="store_true")
     analyze_parser.add_argument("--language", default="en")
 
     batch_parser = subparsers.add_parser("analyze-batch")
@@ -47,6 +48,7 @@ def build_parser() -> argparse.ArgumentParser:
     humanize_parser.add_argument("--content-type", default="auto", choices=["auto", "text", "code"])
     humanize_parser.add_argument("--provider")
     humanize_parser.add_argument("--model")
+    humanize_parser.add_argument("--fast-mode", action="store_true")
     humanize_parser.add_argument("--humanizer-provider")
     humanize_parser.add_argument("--humanizer-model")
     humanize_parser.add_argument("--language", default="en")
@@ -90,6 +92,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         profile=args.profile,
                         provider=args.provider,
                         model=args.model,
+                        fast_mode=args.fast_mode,
                         language_hint=args.language,
                     )
                 )
@@ -124,6 +127,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         profile=args.profile,
                         provider=args.provider,
                         model=args.model,
+                        fast_mode=args.fast_mode,
                         humanizer_provider=args.humanizer_provider,
                         humanizer_model=args.humanizer_model,
                         language_hint=args.language,

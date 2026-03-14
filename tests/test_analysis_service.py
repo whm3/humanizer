@@ -264,6 +264,32 @@ def test_rewrite_guardrails_require_consensus_for_additions() -> None:
     assert guarded == original
 
 
+def test_rewrite_guardrails_require_secondary_provider_validation() -> None:
+    settings = Settings()
+    service = AnalysisService(settings, {})
+
+    guarded = service._apply_rewrite_guardrails(
+        "This is the original paragraph.",
+        "This is the rewritten paragraph.",
+        [],
+        "en",
+    )
+
+    assert guarded == "This is the original paragraph."
+
+
+def test_rewrite_review_provider_selection_excludes_humanizer_provider() -> None:
+    settings = Settings()
+    service = AnalysisService(settings, {})
+
+    reviewers = service._select_rewrite_review_providers(
+        ["openai", "gemini", "perplexity"],
+        "openai",
+    )
+
+    assert reviewers == ["gemini", "perplexity"]
+
+
 def test_safe_fallback_rewrite_makes_source_grounded_structural_changes() -> None:
     settings = Settings(allow_stub_providers_without_keys=True)
     service = AnalysisService(settings, build_provider_registry(settings))

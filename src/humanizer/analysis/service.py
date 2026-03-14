@@ -374,6 +374,10 @@ class AnalysisService:
     ) -> str:
         segments = text.split("```")
         rewritten_segments: list[str] = []
+        rewrite_review_providers = self._select_rewrite_review_providers(
+            review_provider_names,
+            humanizer_provider,
+        )
         for index, segment in enumerate(segments):
             if index % 2 == 1:
                 rewritten_segments.append(f"```{segment}```")
@@ -383,7 +387,7 @@ class AnalysisService:
                     segment,
                     changes,
                     signals,
-                    review_provider_names,
+                    rewrite_review_providers,
                     humanizer_provider,
                     humanizer_model,
                     language_hint,
@@ -459,6 +463,9 @@ class AnalysisService:
         if sanitized.strip() == original_text.strip():
             return original_text
 
+        if not review_provider_names:
+            return original_text
+
         if not self._rewrite_has_provider_consensus(
             original_text,
             sanitized,
@@ -468,6 +475,15 @@ class AnalysisService:
             return original_text
 
         return sanitized.strip() or original_text
+
+    def _select_rewrite_review_providers(
+        self,
+        provider_names: list[str],
+        humanizer_provider: str,
+    ) -> list[str]:
+        return [
+            provider_name for provider_name in provider_names if provider_name != humanizer_provider
+        ]
 
     def _apply_safe_fallback_rewrite(
         self,

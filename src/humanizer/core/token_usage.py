@@ -113,6 +113,18 @@ def extract_token_usage(
             output_tokens=output_tokens,
             total_tokens=total_tokens,
         )
+    if provider == "grok":
+        usage = response_payload.get("usage")
+        if not isinstance(usage, dict):
+            return None
+        return TokenUsageRecord(
+            provider=provider,
+            model=model,
+            operation=operation,
+            input_tokens=_coerce_int(usage.get("prompt_tokens")),
+            output_tokens=_coerce_int(usage.get("completion_tokens")),
+            total_tokens=_coerce_int(usage.get("total_tokens")),
+        )
     return None
 
 

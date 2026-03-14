@@ -28,9 +28,7 @@ def test_command_analyze_returns_normalized_result() -> None:
     assert payload["result"]["profile"] == "ai_detection"
     assert set(payload["result"]["selected_providers"]) == {
         "anthropic",
-        "deepseek",
         "gemini",
-        "grok",
         "openai",
         "perplexity",
     }

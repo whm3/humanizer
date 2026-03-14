@@ -59,6 +59,20 @@ def test_extract_token_usage_for_anthropic() -> None:
     assert record.total_tokens == 27
 
 
+def test_extract_token_usage_for_grok() -> None:
+    record = extract_token_usage(
+        "grok",
+        "grok-3-mini",
+        "analyze",
+        {"usage": {"prompt_tokens": 19, "completion_tokens": 4, "total_tokens": 23}},
+    )
+
+    assert record is not None
+    assert record.input_tokens == 19
+    assert record.output_tokens == 4
+    assert record.total_tokens == 23
+
+
 def test_token_usage_logger_writes_jsonl(tmp_path) -> None:
     log_path = tmp_path / "token-usage.jsonl"
     logger = TokenUsageLogger(str(log_path))

@@ -5,7 +5,7 @@ from humanizer.core.settings import Settings
 from humanizer.providers.base import RewriteReviewRequest, RewriteReviewResult
 from humanizer.providers.registry import build_provider_registry
 
-ALL_STUB_PROVIDERS = {"anthropic", "deepseek", "gemini", "grok", "openai", "perplexity"}
+ALL_STUB_PROVIDERS = {"anthropic", "gemini", "openai", "perplexity"}
 
 
 def test_analyze_returns_result_with_defaults() -> None:
@@ -195,6 +195,18 @@ def test_humanize_allows_humanizer_provider_override() -> None:
 
     assert result.humanizer_provider == "gemini"
     assert result.humanizer_model == "gemini-2.5-pro"
+
+
+def test_analyze_rejects_rewrite_only_provider_for_detection() -> None:
+    settings = Settings(allow_stub_providers_without_keys=True)
+    service = AnalysisService(settings, build_provider_registry(settings))
+
+    try:
+        service.analyze(AnalyzeRequest(text="Single provider path.", profile="ai_detection", provider="grok"))
+    except ValueError as exc:
+        assert str(exc) == "profile ai_detection does not support provider: grok"
+    else:
+        raise AssertionError("expected ValueError for rewrite-only provider on detection")
 
 
 def test_humanization_changes_target_fabricated_technical_style() -> None:

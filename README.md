@@ -19,9 +19,17 @@ Detection approach:
 
 Current live provider-backed detection supports:
 
-- `openai`
+- `anthropic`
 - `gemini`
+- `openai`
 - `perplexity`
+
+Current rewrite-only provider support:
+
+- `grok` is available as a humanization/rewrite provider, but is not currently part of the detection consensus set
+- reason: current Grok detection results on the project fixture set are not calibrated enough for consensus use yet; it showed both false positives on known human material and misses on some synthetic samples, so it is safer to keep it on the rewrite side while evaluation continues
+
+Post-MVP provider scaffolding still exists for `deepseek`, but it is not enabled by default and is not part of the current live MVP surface.
 
 The service can:
 
@@ -78,6 +86,9 @@ Current environment variables used by the app include:
 - `DEEPSEEK_API_KEY`
 - `GROK_API_KEY`
 - `XAI_API_KEY`
+
+Detection currently uses `anthropic`, `gemini`, `openai`, and `perplexity`.
+`grok` is currently enabled for rewrite experimentation, not for detection consensus.
 
 Secrets are referenced from the environment only and should not be copied into repository files, logs, or docs.
 

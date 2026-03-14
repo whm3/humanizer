@@ -26,7 +26,6 @@ async def test_providers_endpoint_lists_supported_providers(client: AsyncClient)
     assert response.status_code == 200
     assert {item["name"] for item in response.json()["providers"]} == {
         "anthropic",
-        "deepseek",
         "gemini",
         "grok",
         "openai",
@@ -47,9 +46,7 @@ async def test_analyze_endpoint_returns_normalized_result(client: AsyncClient) -
     assert payload["result"]["profile"] == "ai_detection"
     assert set(payload["result"]["selected_providers"]) == {
         "anthropic",
-        "deepseek",
         "gemini",
-        "grok",
         "openai",
         "perplexity",
     }

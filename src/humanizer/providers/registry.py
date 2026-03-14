@@ -5,6 +5,7 @@ from humanizer.core.token_usage import TokenUsageLogger
 from humanizer.providers.anthropic_adapter import AnthropicAdapter
 from humanizer.providers.base import ProviderAdapter
 from humanizer.providers.gemini_adapter import GeminiAdapter
+from humanizer.providers.grok_adapter import GrokAdapter
 from humanizer.providers.heuristic_adapter import HeuristicAdapter
 from humanizer.providers.openai_adapter import OpenAIAdapter
 from humanizer.providers.perplexity_adapter import PerplexityAdapter
@@ -54,7 +55,15 @@ def build_provider_registry(settings: Settings) -> dict[str, ProviderAdapter]:
             "grok",
             settings.enable_provider_grok,
             settings.grok_api_key,
-            lambda: HeuristicAdapter("grok", settings.default_model_grok),
+            lambda: GrokAdapter(
+                settings.grok_api_key or "",
+                settings.default_model_grok,
+                settings.grok_base_url,
+                settings.provider_request_timeout_seconds,
+                settings.provider_retry_attempts,
+                settings.provider_retry_backoff_seconds,
+                token_usage_logger,
+            ),
         ),
         (
             "openai",

@@ -22,7 +22,7 @@ PROFILES: dict[str, AnalysisProfile] = {
             "Classify the text for likely AI assistance and return normalized scoring signals."
         ),
         default_temperature=0.1,
-        supported_providers=("anthropic", "deepseek", "gemini", "grok", "openai", "perplexity"),
+        supported_providers=("anthropic", "gemini", "openai", "perplexity"),
     ),
     "humanization_feedback": AnalysisProfile(
         name="humanization_feedback",
@@ -31,7 +31,7 @@ PROFILES: dict[str, AnalysisProfile] = {
             "Review the text for humanization opportunities and return structured style signals."
         ),
         default_temperature=0.3,
-        supported_providers=("anthropic", "deepseek", "gemini", "grok", "openai", "perplexity"),
+        supported_providers=("anthropic", "gemini", "openai", "perplexity"),
     ),
 }
 

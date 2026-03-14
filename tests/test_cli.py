@@ -30,7 +30,6 @@ def test_cli_providers_list_outputs_known_providers(capsys) -> None:
     assert exit_code == 0
     assert {item["name"] for item in payload["providers"]} == {
         "anthropic",
-        "deepseek",
         "gemini",
         "grok",
         "openai",
@@ -47,9 +46,7 @@ def test_cli_analyze_outputs_normalized_result(capsys) -> None:
     assert payload["result"]["profile"] == "ai_detection"
     assert set(payload["result"]["selected_providers"]) == {
         "anthropic",
-        "deepseek",
         "gemini",
-        "grok",
         "openai",
         "perplexity",
     }

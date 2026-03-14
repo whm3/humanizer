@@ -3,6 +3,7 @@ import pytest
 from humanizer.core.settings import Settings
 from humanizer.providers.anthropic_adapter import AnthropicAdapter
 from humanizer.providers.gemini_adapter import GeminiAdapter
+from humanizer.providers.grok_adapter import GrokAdapter
 from humanizer.providers.openai_adapter import OpenAIAdapter
 from humanizer.providers.perplexity_adapter import PerplexityAdapter
 from humanizer.providers.registry import build_provider_registry
@@ -13,6 +14,7 @@ def test_settings_autodetect_provider_tokens_from_environment(
 ) -> None:
     monkeypatch.setenv("HUMANIZER_ANTHROPIC_PAID_KEY", "test-anthropic-key")
     monkeypatch.setenv("HUMANIZER_GEMINI_PAID_KEY", "test-gemini-key")
+    monkeypatch.setenv("HUMANIZER_GROK_KEY", "test-grok-key")
     settings = Settings()
 
     assert settings.anthropic_api_key == "test-anthropic-key"
@@ -21,6 +23,8 @@ def test_settings_autodetect_provider_tokens_from_environment(
     assert settings.grok_api_key == "test-grok-key"
     assert settings.openai_api_key == "test-openai-key"
     assert settings.perplexity_api_key == "test-perplexity-key"
+    assert settings.enable_provider_deepseek is False
+    assert settings.enable_provider_grok is True
 
 
 def test_registry_includes_providers_with_detected_tokens() -> None:
@@ -30,7 +34,6 @@ def test_registry_includes_providers_with_detected_tokens() -> None:
 
     assert set(providers) == {
         "anthropic",
-        "deepseek",
         "gemini",
         "grok",
         "openai",
@@ -97,3 +100,26 @@ def test_paid_anthropic_key_alias_takes_precedence(
     settings = Settings()
 
     assert settings.anthropic_api_key == "paid-anthropic-key"
+
+
+def test_paid_grok_key_alias_takes_precedence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HUMANIZER_GROK_KEY", "paid-grok-key")
+    monkeypatch.setenv("XAI_API_KEY", "free-grok-key")
+    monkeypatch.delenv("GROK_API_KEY", raising=False)
+
+    settings = Settings()
+
+    assert settings.grok_api_key == "paid-grok-key"
+
+
+def test_registry_uses_live_grok_adapter_when_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HUMANIZER_GROK_KEY", "test-grok-key")
+
+    settings = Settings(enable_provider_grok=True, allow_stub_providers_without_keys=False)
+    providers = build_provider_registry(settings)
+
+    assert isinstance(providers["grok"], GrokAdapter)

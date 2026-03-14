@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     default_humanizer_provider: str = "openai"
     default_humanizer_model: str = "gpt-5-mini"
     enable_provider_anthropic: bool = True
-    enable_provider_deepseek: bool = True
+    enable_provider_deepseek: bool = False
     enable_provider_gemini: bool = True
     enable_provider_grok: bool = True
     enable_provider_openai: bool = True
@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     openai_base_url: str = "https://api.openai.com/v1"
     anthropic_base_url: str = "https://api.anthropic.com"
     gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
+    grok_base_url: str = "https://api.x.ai/v1"
     perplexity_base_url: str = "https://api.perplexity.ai"
     anthropic_api_key: str | None = Field(
         default=None,
@@ -63,7 +64,12 @@ class Settings(BaseSettings):
     grok_api_key: str | None = Field(
         default=None,
         alias="GROK_API_KEY",
-        validation_alias=AliasChoices("GROK_API_KEY", "XAI_API_KEY"),
+        validation_alias=AliasChoices(
+            "HUMANIZER_GROK_KEY",
+            "HUMANIZER_GROK_PAID_KEY",
+            "GROK_API_KEY",
+            "XAI_API_KEY",
+        ),
     )
     openai_api_key: str | None = Field(
         default=None,

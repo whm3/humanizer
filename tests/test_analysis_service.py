@@ -1,6 +1,8 @@
 from humanizer.analysis.service import AnalysisService
 from humanizer.api.schemas import AnalyzeRequest, HumanizeRequest
+from humanizer.core.errors import ProviderTransientError
 from humanizer.core.settings import Settings
+from humanizer.providers.base import RewriteReviewRequest, RewriteReviewResult
 from humanizer.providers.registry import build_provider_registry
 
 ALL_STUB_PROVIDERS = {"anthropic", "deepseek", "gemini", "grok", "openai", "perplexity"}
@@ -211,3 +213,148 @@ def test_humanization_changes_target_fabricated_technical_style() -> None:
 
     joined_changes = " | ".join(changes).lower()
     assert "invented terminology" in joined_changes or "fabricated citations" in joined_changes
+
+
+def test_rewrite_guardrails_strip_added_citation_markers() -> None:
+    settings = Settings(allow_stub_providers_without_keys=True)
+    service = AnalysisService(settings, build_provider_registry(settings))
+
+    guarded = service._apply_rewrite_guardrails(
+        "This is a plain paragraph without sources.",
+        "This is a rewritten paragraph with invented support [1][3][4].",
+        ["openai"],
+        "en",
+    )
+
+    assert "[1]" not in guarded
+    assert "[3]" not in guarded
+
+
+def test_rewrite_guardrails_require_consensus_for_additions() -> None:
+    class ReviewProvider:
+        def __init__(self, supported: bool):
+            self.name = "reviewer"
+            self.default_model = "stub"
+            self._supported = supported
+
+        def analyze(self, request):  # pragma: no cover - not used here
+            raise AssertionError("analyze should not be called")
+
+        def rewrite(self, request):  # pragma: no cover - not used here
+            raise AssertionError("rewrite should not be called")
+
+        def review_rewrite(self, request: RewriteReviewRequest) -> RewriteReviewResult:
+            return RewriteReviewResult(
+                supported=self._supported,
+                confidence="high",
+                issues=[] if self._supported else ["unsupported addition"],
+                explanation="stub review",
+            )
+
+    service = AnalysisService(
+        Settings(),
+        {"openai": ReviewProvider(True), "gemini": ReviewProvider(False)},
+    )
+
+    original = "Registering matters because it shows commitment."
+    rewritten = "Registering matters because 18 to 25 year olds must file within 30 days."
+
+    guarded = service._apply_rewrite_guardrails(original, rewritten, ["openai", "gemini"], "en")
+
+    assert guarded == original
+
+
+def test_safe_fallback_rewrite_makes_source_grounded_structural_changes() -> None:
+    settings = Settings(allow_stub_providers_without_keys=True)
+    service = AnalysisService(settings, build_provider_registry(settings))
+
+    original = (
+        "## Introduction\n\n"
+        "We often talk about leadership, innovation, and change.\n\n"
+        "Registering is not an act of submission; it is an act of confidence.\n\n"
+        "---\n\n"
+        "*End of Speech*"
+    )
+
+    rewritten = service._apply_safe_fallback_rewrite(
+        original,
+        [
+            "soften overly rigid whitepaper structure and reduce boilerplate formality",
+            "dial back speechwriter-style rhetoric and make the voice less ceremonial",
+        ],
+        [
+            "formal rhetorical structure",
+            "persuasive patriotic language",
+        ],
+    )
+
+    assert "## Introduction" not in rewritten
+    assert "---" not in rewritten
+    assert "*End of Speech*" not in rewritten
+    assert "Registering is not submission." in rewritten
+
+
+def test_analyze_skips_temporarily_unavailable_provider_when_others_succeed() -> None:
+    class StableProvider:
+        def __init__(self, name: str):
+            self.name = name
+            self.default_model = "stub"
+
+        def analyze(self, request):
+            from humanizer.providers.base import ProviderResult
+
+            return ProviderResult(
+                label="likely_human",
+                score=0.2,
+                confidence="medium",
+                signals=["plain language"],
+                explanation="ok",
+            )
+
+        def rewrite(self, request):  # pragma: no cover - not used here
+            return request.text
+
+        def review_rewrite(self, request: RewriteReviewRequest) -> RewriteReviewResult:
+            return RewriteReviewResult(True, "high", [], "ok")
+
+    class FlakyProvider(StableProvider):
+        def analyze(self, request):
+            raise ProviderTransientError("rate limited")
+
+    settings = Settings(allow_stub_providers_without_keys=True)
+    service = AnalysisService(
+        settings,
+        {"openai": StableProvider("openai"), "gemini": FlakyProvider("gemini")},
+    )
+
+    result = service.analyze(AnalyzeRequest(text="plain text", profile="ai_detection"))
+
+    assert result.selected_providers == ["openai"]
+    assert [item.provider for item in result.source_results] == ["openai"]
+
+
+def test_analyze_single_provider_override_still_raises_on_transient_failure() -> None:
+    class FlakyProvider:
+        def __init__(self):
+            self.name = "openai"
+            self.default_model = "stub"
+
+        def analyze(self, request):
+            raise ProviderTransientError("rate limited")
+
+        def rewrite(self, request):  # pragma: no cover - not used here
+            return request.text
+
+        def review_rewrite(self, request: RewriteReviewRequest) -> RewriteReviewResult:
+            return RewriteReviewResult(True, "high", [], "ok")
+
+    service = AnalysisService(Settings(), {"openai": FlakyProvider()})
+
+    try:
+        service.analyze(
+            AnalyzeRequest(text="plain text", profile="ai_detection", provider="openai")
+        )
+    except ProviderTransientError as exc:
+        assert "rate limited" in str(exc)
+    else:
+        raise AssertionError("expected ProviderTransientError for explicit provider override")

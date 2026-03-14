@@ -4,3 +4,7 @@ class HumanizerError(ValueError):
 
 class ValidationError(HumanizerError):
     """Raised for invalid user input or unsupported configuration selections."""
+
+
+class ProviderTransientError(HumanizerError):
+    """Raised when a provider is temporarily unavailable for the current request."""

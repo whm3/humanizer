@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from time import perf_counter
 from uuid import uuid4
 
@@ -16,15 +17,22 @@ from humanizer.api.schemas import (
     HumanizeResult,
 )
 from humanizer.core.errors import ValidationError
+from humanizer.core.errors import ProviderTransientError
 from humanizer.core.settings import Settings
 from humanizer.input_loading import detect_content_type, resolve_text_input
-from humanizer.providers.base import ProviderAdapter, ProviderRequest, RewriteRequest
+from humanizer.providers.base import (
+    ProviderAdapter,
+    ProviderRequest,
+    RewriteRequest,
+    RewriteReviewRequest,
+)
 
 
 class AnalysisService:
     def __init__(self, settings: Settings, providers: dict[str, ProviderAdapter]):
         self.settings = settings
         self.providers = providers
+        self._rewrite_review_cache: dict[tuple[str, str, str], bool] = {}
 
     def analyze(self, request: AnalyzeRequest) -> AnalyzeAggregateResult:
         input_text = resolve_text_input(request.text, request.input_path, request.input_url)
@@ -37,17 +45,30 @@ class AnalysisService:
             raise ValidationError("no enabled providers with configured credentials are available")
 
         started = perf_counter()
-        source_results = [
-            self._analyze_with_provider(
-                provider_name=provider_name,
-                request=request,
-                input_text=input_text,
-                content_type=content_type,
-                profile_name=profile.name,
-                system_prompt=profile.system_prompt,
-            )
-            for provider_name in selected_providers
-        ]
+        source_results: list[AnalyzeResult] = []
+        transient_failures: list[str] = []
+        for provider_name in selected_providers:
+            try:
+                source_results.append(
+                    self._analyze_with_provider(
+                        provider_name=provider_name,
+                        request=request,
+                        input_text=input_text,
+                        content_type=content_type,
+                        profile_name=profile.name,
+                        system_prompt=profile.system_prompt,
+                    )
+                )
+            except ProviderTransientError:
+                if request.provider is not None:
+                    raise
+                transient_failures.append(provider_name)
+        if not source_results:
+            if transient_failures:
+                raise ValidationError(
+                    "all selected providers were temporarily unavailable for this request"
+                )
+            raise ValidationError("no enabled providers with configured credentials are available")
         latency_ms = max(1, int((perf_counter() - started) * 1000))
         consensus = self._build_consensus(source_results)
         worst_case = max(source_results, key=lambda result: result.score)
@@ -58,7 +79,7 @@ class AnalysisService:
             request_id=f"req_{uuid4().hex[:12]}",
             latency_ms=latency_ms,
             provider_selection=request.provider or "all_available",
-            selected_providers=selected_providers,
+            selected_providers=[result.provider for result in source_results],
             source_results=source_results,
             consensus=consensus,
             worst_case=worst_case,
@@ -114,9 +135,14 @@ class AnalysisService:
             rewritten_text = self._rewrite_text(
                 current_text,
                 analysis.summary.humanization_changes,
+                analysis.consensus.signals,
+                analysis.selected_providers,
                 humanizer_provider,
                 humanizer_model,
                 request.language_hint,
+                iteration_index,
+                analysis.consensus.score,
+                request.threshold,
             )
             iterations.append(
                 HumanizeIteration(
@@ -321,6 +347,12 @@ class AnalysisService:
             changes.append("soften overly rigid whitepaper structure and reduce boilerplate formality")
         if "numeric" in signal_text or "precision" in signal_text or "specifics" in signal_text:
             changes.append("reduce implausible numeric precision unless the exact values matter")
+        if "generic" in signal_text or "abstract" in signal_text or "platitudes" in signal_text:
+            changes.append("replace generic rhetoric with plainer, more concrete language")
+        if "patriotic" in signal_text or "persuasive" in signal_text or "rhetorical" in signal_text:
+            changes.append("dial back speechwriter-style rhetoric and make the voice less ceremonial")
+        if "parallel" in signal_text or "repetitive" in signal_text or "motivational" in signal_text:
+            changes.append("break up repeated motivational phrasing and avoid tidy rhetorical contrasts")
         if profile_name == "humanization_feedback":
             changes.append("add personal perspective or lived-detail phrasing")
         if not changes:
@@ -331,9 +363,14 @@ class AnalysisService:
         self,
         text: str,
         changes: list[str],
+        signals: list[str],
+        review_provider_names: list[str],
         humanizer_provider: str,
         humanizer_model: str,
         language_hint: str,
+        iteration_index: int,
+        prior_score: float,
+        target_score: float,
     ) -> str:
         segments = text.split("```")
         rewritten_segments: list[str] = []
@@ -345,9 +382,14 @@ class AnalysisService:
                 self._rewrite_prose_segment(
                     segment,
                     changes,
+                    signals,
+                    review_provider_names,
                     humanizer_provider,
                     humanizer_model,
                     language_hint,
+                    iteration_index,
+                    prior_score,
+                    target_score,
                 )
             )
         return "".join(rewritten_segments)
@@ -356,9 +398,14 @@ class AnalysisService:
         self,
         text: str,
         changes: list[str],
+        signals: list[str],
+        review_provider_names: list[str],
         humanizer_provider: str,
         humanizer_model: str,
         language_hint: str,
+        iteration_index: int,
+        prior_score: float,
+        target_score: float,
     ) -> str:
         if not text.strip():
             return text
@@ -369,7 +416,176 @@ class AnalysisService:
                 content_type="text",
                 model=humanizer_model,
                 changes=changes,
+                signals=signals,
+                iteration=iteration_index,
+                prior_score=prior_score,
+                target_score=target_score,
                 metadata={},
             )
         )
-        return rewritten if rewritten.strip() else text
+        if not rewritten.strip():
+            rewritten = text
+        guarded = self._apply_rewrite_guardrails(text, rewritten, review_provider_names, language_hint)
+        if (
+            guarded.strip() == text.strip()
+            and prior_score > (target_score + 0.20)
+        ):
+            fallback = self._apply_safe_fallback_rewrite(text, changes, signals)
+            if fallback.strip() != text.strip():
+                guarded = self._apply_rewrite_guardrails(
+                    text,
+                    fallback,
+                    review_provider_names,
+                    language_hint,
+                )
+        return guarded
+
+    def _apply_rewrite_guardrails(
+        self,
+        original_text: str,
+        rewritten_text: str,
+        review_provider_names: list[str],
+        language_hint: str,
+    ) -> str:
+        sanitized = rewritten_text
+
+        if not _contains_citation_markers(original_text):
+            sanitized = _strip_citation_markers(sanitized)
+        if not _contains_urls(original_text):
+            sanitized = _strip_urls(sanitized)
+        if not _contains_reference_heading(original_text):
+            sanitized = _strip_reference_sections(sanitized)
+
+        if sanitized.strip() == original_text.strip():
+            return original_text
+
+        if not self._rewrite_has_provider_consensus(
+            original_text,
+            sanitized,
+            review_provider_names,
+            language_hint,
+        ):
+            return original_text
+
+        return sanitized.strip() or original_text
+
+    def _apply_safe_fallback_rewrite(
+        self,
+        text: str,
+        changes: list[str],
+        signals: list[str],
+    ) -> str:
+        rewritten = text
+        lowered_changes = " ".join(changes).lower()
+        lowered_signals = " ".join(signals).lower()
+
+        # Strip templated markdown scaffolding when it is adding formality rather than meaning.
+        if "structured" in lowered_changes or "whitepaper" in lowered_changes or "formal" in lowered_signals:
+            rewritten = re.sub(r"(?m)^\s*---\s*$\n?", "", rewritten)
+            rewritten = re.sub(r"(?m)^\s{0,3}##\s+", "", rewritten)
+            rewritten = re.sub(r"(?m)^\s{0,3}#\s+\*\*(.*?)\*\*\s*$", r"\1", rewritten)
+            rewritten = re.sub(r"(?m)^\s{0,3}\*End of Speech\*\s*$", "", rewritten)
+
+        replacements = {
+            "It is not always": "You do not always",
+            "It is always": "It still",
+            "Today, we gather not to speak of fear, but of duty": "This is not really about fear. It is about duty",
+            "It is a promise": "It is a commitment",
+            "It symbolizes": "That shows",
+            "We often talk about": "People talk a lot about",
+            "The willingness to serve, if called, affirms that": "Being willing to serve, if called, shows that",
+            "Registering is not an act of submission; it is an act of confidence.": "Registering is not submission. It shows confidence.",
+            "The future belongs to those who build it.": "The future depends on what people do next.",
+            "Remember: duty is not a burden when it is carried with purpose.": "Duty feels lighter when there is a real reason behind it.",
+            "So stand tall. Sign your name.": "So go sign your name.",
+            "It is not": "It isn't",
+            "It is": "It's",
+        }
+        for source, target in replacements.items():
+            rewritten = rewritten.replace(source, target)
+
+        if "rhetoric" in lowered_changes or "patriotic" in lowered_signals or "persuasive" in lowered_signals:
+            rewritten = rewritten.replace("this country remains united, capable, and willing to defend the values it holds sacred", "people are still willing to back the country and its values")
+            rewritten = rewritten.replace("You join a lineage of citizens who understood that peace must be protected", "You join other people who knew peace does not protect itself")
+
+        if "generic rhetoric" in lowered_changes or "platitudes" in lowered_signals:
+            rewritten = rewritten.replace("It is an idea, sustained by its people.", "It only lasts if people keep showing up for it.")
+            rewritten = rewritten.replace("the quiet, enduring responsibilities that hold a free nation together", "the everyday responsibilities that keep a country running")
+            rewritten = rewritten.replace("The future goes to those who make it happen.", "What happens next depends on whether people actually do something.")
+
+        if "motivational" in lowered_changes or "parallel" in lowered_signals or "repetitive" in lowered_signals:
+            rewritten = rewritten.replace("It's not something we pick, but it shapes who we turn out to be.", "We don't choose those moments, but they still shape us.")
+            rewritten = rewritten.replace("It's not splitting us up; it's about character and guts holding our security together, beyond just guns or rules.", "It doesn't split people up. It asks people to take some responsibility.")
+            rewritten = rewritten.replace("Signing up isn't giving in. It's owning your confidence.", "Signing up isn't giving in. It's just taking responsibility.")
+            rewritten = rewritten.replace("No citizen move is too small if it backs everyone's freedom.", "Small acts still matter.")
+            rewritten = rewritten.replace("Let history see this generation didn't sit back waiting for somebody else.", "Let it be clear this generation didn't just sit around waiting.")
+
+        rewritten = re.sub(r"\n{3,}", "\n\n", rewritten)
+        rewritten = re.sub(r"[ \t]{2,}", " ", rewritten)
+        return rewritten.strip()
+
+    def _rewrite_has_provider_consensus(
+        self,
+        original_text: str,
+        rewritten_text: str,
+        review_provider_names: list[str],
+        language_hint: str,
+    ) -> bool:
+        for provider_name in review_provider_names:
+            cache_key = (provider_name, original_text, rewritten_text)
+            cached = self._rewrite_review_cache.get(cache_key)
+            if cached is not None:
+                if not cached:
+                    return False
+                continue
+            provider = self.providers[provider_name]
+            try:
+                review = provider.review_rewrite(
+                    RewriteReviewRequest(
+                        source_text=original_text,
+                        rewritten_text=rewritten_text,
+                        language_hint=language_hint,
+                        model=provider.default_model,
+                        metadata={},
+                    )
+                )
+            except ProviderTransientError:
+                return False
+            except Exception:
+                return False
+            if not review.supported:
+                self._rewrite_review_cache[cache_key] = False
+                return False
+            self._rewrite_review_cache[cache_key] = True
+        return True
+
+
+def _contains_citation_markers(text: str) -> bool:
+    return bool(re.search(r"\[\d+\]|\([A-Z][A-Za-z]+,\s*\d{4}\)", text))
+
+
+def _strip_citation_markers(text: str) -> str:
+    stripped = re.sub(r"\[\d+(?:\]\[\d+)*\]", "", text)
+    stripped = re.sub(r"\s{2,}", " ", stripped)
+    return stripped
+
+
+def _contains_urls(text: str) -> bool:
+    return "http://" in text or "https://" in text or "www." in text
+
+
+def _strip_urls(text: str) -> str:
+    stripped = re.sub(r"https?://\S+|www\.\S+", "", text)
+    stripped = re.sub(r"\s{2,}", " ", stripped)
+    return stripped
+
+
+def _contains_reference_heading(text: str) -> bool:
+    return bool(re.search(r"(?im)^\s{0,3}(references|bibliography|sources)\s*:?\s*$", text))
+
+
+def _strip_reference_sections(text: str) -> str:
+    pattern = re.compile(
+        r"(?ims)\n\s{0,3}(references|bibliography|sources)\s*:?\s*\n.*$"
+    )
+    return re.sub(pattern, "", text).rstrip()

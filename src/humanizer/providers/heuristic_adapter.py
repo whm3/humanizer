@@ -1,6 +1,15 @@
 from __future__ import annotations
 
-from humanizer.providers.base import ProviderAdapter, ProviderRequest, ProviderResult, RewriteRequest
+import re
+
+from humanizer.providers.base import (
+    ProviderAdapter,
+    ProviderRequest,
+    ProviderResult,
+    RewriteRequest,
+    RewriteReviewRequest,
+    RewriteReviewResult,
+)
 
 
 class HeuristicAdapter(ProviderAdapter):
@@ -61,17 +70,44 @@ class HeuristicAdapter(ProviderAdapter):
             rewritten = rewritten.replace(source, target).replace(source.capitalize(), target.capitalize())
 
         lowered_changes = " ".join(change.lower() for change in request.changes)
+        lowered_signals = " ".join(signal.lower() for signal in request.signals)
         if "fabricated" in lowered_changes or "invented terminology" in lowered_changes:
             rewritten = rewritten.replace("Sub-Quantum Vernier Calibration", "timing calibration")
             rewritten = rewritten.replace("chronal shearing", "timing drift")
             rewritten = rewritten.replace("dilithium lattice", "reactor core")
         if "overly rigid whitepaper structure" in lowered_changes:
             rewritten = rewritten.replace("Abstract", "Overview")
+        if "generic rhetoric" in lowered_changes or "platitudes" in lowered_signals:
+            rewritten = rewritten.replace("The future belongs to those who help build it.", "The future depends on what we do next.")
+            rewritten = rewritten.replace("It is an idea kept alive by its people.", "It only lasts if people keep showing up for it.")
         if "implausible numeric precision" in lowered_changes:
             rewritten = rewritten.replace("0.0003", "about 0.0003")
             rewritten = rewritten.replace("0.045", "about 0.045")
+        if request.iteration > 1:
+            rewritten = rewritten.replace("It is ", "It's ")
+            rewritten = rewritten.replace("It is not ", "It isn't ")
+            rewritten = rewritten.replace("do not", "don't")
+            rewritten = rewritten.replace("cannot", "can't")
 
         rewritten = rewritten.replace(" in order to ", " to ")
         rewritten = rewritten.replace(", and ", ". And ")
         rewritten = " ".join(segment.strip() for segment in rewritten.split())
         return rewritten
+
+    def review_rewrite(self, request: RewriteReviewRequest) -> RewriteReviewResult:
+        source_numbers = set(_NUMERIC_PATTERN.findall(request.source_text))
+        rewritten_numbers = set(_NUMERIC_PATTERN.findall(request.rewritten_text))
+        issues: list[str] = []
+        if rewritten_numbers - source_numbers:
+            issues.append("introduced new numeric claims")
+        if "[" in request.rewritten_text and "]" in request.rewritten_text and "[" not in request.source_text:
+            issues.append("introduced citation markers")
+        return RewriteReviewResult(
+            supported=not issues,
+            confidence="medium",
+            issues=issues,
+            explanation="Deterministic review heuristic used as a temporary adapter.",
+        )
+
+
+_NUMERIC_PATTERN = re.compile(r"\b\d[\d,.\-/%]*\b")

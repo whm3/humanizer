@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     request_text_max_chars: int = 250000
     batch_max_items: int = 20
     provider_request_timeout_seconds: float = 60.0
+    provider_retry_attempts: int = 2
+    provider_retry_backoff_seconds: float = 2.0
     allow_stub_providers_without_keys: bool = False
     openai_base_url: str = "https://api.openai.com/v1"
     gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"

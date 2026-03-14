@@ -1,24 +1,45 @@
 from __future__ import annotations
 
+from time import sleep
+
 import httpx
 
-from humanizer.core.errors import HumanizerError
-from humanizer.providers.base import ProviderRequest, ProviderResult, RewriteRequest
+from humanizer.core.errors import HumanizerError, ProviderTransientError
+from humanizer.providers.base import (
+    ProviderRequest,
+    ProviderResult,
+    RewriteRequest,
+    RewriteReviewRequest,
+    RewriteReviewResult,
+)
 from humanizer.providers.json_utils import (
     build_analysis_instructions,
     build_rewrite_instructions,
+    build_rewrite_review_instructions,
+    openai_rewrite_review_schema,
     openai_json_schema,
     parse_provider_json,
+    parse_rewrite_review_json,
 )
 
 
 class OpenAIAdapter:
-    def __init__(self, api_key: str, default_model: str, base_url: str, timeout_seconds: float):
+    def __init__(
+        self,
+        api_key: str,
+        default_model: str,
+        base_url: str,
+        timeout_seconds: float,
+        retry_attempts: int,
+        retry_backoff_seconds: float,
+    ):
         self.name = "openai"
         self.default_model = default_model
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
         self._timeout_seconds = timeout_seconds
+        self._retry_attempts = retry_attempts
+        self._retry_backoff_seconds = retry_backoff_seconds
 
     def analyze(self, request: ProviderRequest) -> ProviderResult:
         model = request.model or self.default_model
@@ -49,21 +70,7 @@ class OpenAIAdapter:
             },
         }
 
-        try:
-            with httpx.Client(timeout=self._timeout_seconds) as client:
-                response = client.post(
-                    f"{self._base_url}/responses",
-                    headers={
-                        "Authorization": f"Bearer {self._api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json=payload,
-                )
-                response.raise_for_status()
-        except httpx.HTTPError as exc:
-            raise HumanizerError(f"openai request failed: {exc}") from exc
-
-        response_payload = response.json()
+        response_payload = self._post_responses(payload, "openai request")
         output_text = response_payload.get("output_text") or _extract_openai_output_text(response_payload)
         if not output_text:
             raise HumanizerError("openai response did not include structured output text")
@@ -92,25 +99,82 @@ class OpenAIAdapter:
             ],
         }
 
-        try:
-            with httpx.Client(timeout=self._timeout_seconds) as client:
-                response = client.post(
-                    f"{self._base_url}/responses",
-                    headers={
-                        "Authorization": f"Bearer {self._api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json=payload,
-                )
-                response.raise_for_status()
-        except httpx.HTTPError as exc:
-            raise HumanizerError(f"openai rewrite request failed: {exc}") from exc
-
-        response_payload = response.json()
+        response_payload = self._post_responses(payload, "openai rewrite request")
         output_text = response_payload.get("output_text") or _extract_openai_output_text(response_payload)
         if not output_text:
             raise HumanizerError("openai rewrite response did not include text output")
         return output_text.strip()
+
+    def review_rewrite(self, request: RewriteReviewRequest) -> RewriteReviewResult:
+        payload = {
+            "model": request.model or self.default_model,
+            "input": [
+                {
+                    "role": "system",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": build_rewrite_review_instructions(request.language_hint),
+                        }
+                    ],
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": (
+                                f"Source text:\n{request.source_text}\n\n"
+                                f"Rewritten text:\n{request.rewritten_text}"
+                            ),
+                        }
+                    ],
+                },
+            ],
+            "text": {
+                "format": {
+                    "type": "json_schema",
+                    "name": "humanizer_rewrite_review",
+                    "schema": openai_rewrite_review_schema(),
+                    "strict": True,
+                }
+            },
+        }
+
+        response_payload = self._post_responses(payload, "openai rewrite review request")
+        output_text = response_payload.get("output_text") or _extract_openai_output_text(response_payload)
+        if not output_text:
+            raise HumanizerError("openai rewrite review response did not include structured output")
+        try:
+            return parse_rewrite_review_json(output_text)
+        except ValueError as exc:
+            raise HumanizerError(f"openai rewrite review could not be normalized: {exc}") from exc
+
+    def _post_responses(self, payload: dict[str, object], action_label: str) -> dict[str, object]:
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": "application/json",
+        }
+        attempts = max(self._retry_attempts, 1)
+        for attempt in range(1, attempts + 1):
+            try:
+                with httpx.Client(timeout=self._timeout_seconds) as client:
+                    response = client.post(f"{self._base_url}/responses", headers=headers, json=payload)
+                    response.raise_for_status()
+                    return response.json()
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == 429 and attempt < attempts:
+                    sleep(self._retry_backoff_seconds * attempt)
+                    continue
+                if exc.response.status_code in {429, 500, 502, 503, 504}:
+                    raise ProviderTransientError(f"{action_label} temporarily unavailable: {exc}") from exc
+                raise HumanizerError(f"{action_label} failed: {exc}") from exc
+            except httpx.HTTPError as exc:
+                if attempt < attempts:
+                    sleep(self._retry_backoff_seconds * attempt)
+                    continue
+                raise ProviderTransientError(f"{action_label} temporarily unavailable: {exc}") from exc
+        raise ProviderTransientError(f"{action_label} temporarily unavailable")
 
 
 def _extract_openai_output_text(response_payload: dict[str, object]) -> str:

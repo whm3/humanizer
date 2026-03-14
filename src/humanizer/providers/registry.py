@@ -31,6 +31,8 @@ def build_provider_registry(settings: Settings) -> dict[str, ProviderAdapter]:
                 settings.default_model_gemini,
                 settings.gemini_base_url,
                 settings.provider_request_timeout_seconds,
+                settings.provider_retry_attempts,
+                settings.provider_retry_backoff_seconds,
             ),
         ),
         (
@@ -48,6 +50,8 @@ def build_provider_registry(settings: Settings) -> dict[str, ProviderAdapter]:
                 settings.default_model_openai,
                 settings.openai_base_url,
                 settings.provider_request_timeout_seconds,
+                settings.provider_retry_attempts,
+                settings.provider_retry_backoff_seconds,
             ),
         ),
         (
@@ -59,6 +63,8 @@ def build_provider_registry(settings: Settings) -> dict[str, ProviderAdapter]:
                 settings.default_model_perplexity,
                 settings.perplexity_base_url,
                 settings.provider_request_timeout_seconds,
+                settings.provider_retry_attempts,
+                settings.provider_retry_backoff_seconds,
             ),
         ),
     ]

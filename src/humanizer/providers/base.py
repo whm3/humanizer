@@ -31,7 +31,28 @@ class RewriteRequest:
     content_type: str
     model: str
     changes: list[str]
+    signals: list[str]
+    iteration: int
+    prior_score: float
+    target_score: float
     metadata: dict[str, object]
+
+
+@dataclass(frozen=True)
+class RewriteReviewRequest:
+    source_text: str
+    rewritten_text: str
+    language_hint: str
+    model: str
+    metadata: dict[str, object]
+
+
+@dataclass(frozen=True)
+class RewriteReviewResult:
+    supported: bool
+    confidence: str
+    issues: list[str]
+    explanation: str
 
 
 class ProviderAdapter(Protocol):
@@ -42,4 +63,7 @@ class ProviderAdapter(Protocol):
         ...
 
     def rewrite(self, request: RewriteRequest) -> str:
+        ...
+
+    def review_rewrite(self, request: RewriteReviewRequest) -> RewriteReviewResult:
         ...

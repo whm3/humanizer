@@ -45,6 +45,20 @@ def test_extract_token_usage_for_perplexity() -> None:
     assert record.total_tokens == 20
 
 
+def test_extract_token_usage_for_anthropic() -> None:
+    record = extract_token_usage(
+        "anthropic",
+        "claude-sonnet-4-5",
+        "analyze",
+        {"usage": {"input_tokens": 21, "output_tokens": 6}},
+    )
+
+    assert record is not None
+    assert record.input_tokens == 21
+    assert record.output_tokens == 6
+    assert record.total_tokens == 27
+
+
 def test_token_usage_logger_writes_jsonl(tmp_path) -> None:
     log_path = tmp_path / "token-usage.jsonl"
     logger = TokenUsageLogger(str(log_path))

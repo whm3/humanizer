@@ -96,6 +96,23 @@ def extract_token_usage(
             output_tokens=_coerce_int(usage.get("completion_tokens")),
             total_tokens=_coerce_int(usage.get("total_tokens")),
         )
+    if provider == "anthropic":
+        usage = response_payload.get("usage")
+        if not isinstance(usage, dict):
+            return None
+        input_tokens = _coerce_int(usage.get("input_tokens"))
+        output_tokens = _coerce_int(usage.get("output_tokens"))
+        total_tokens = None
+        if input_tokens is not None and output_tokens is not None:
+            total_tokens = input_tokens + output_tokens
+        return TokenUsageRecord(
+            provider=provider,
+            model=model,
+            operation=operation,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=total_tokens,
+        )
     return None
 
 

@@ -34,12 +34,16 @@ class Settings(BaseSettings):
     token_usage_log_path: str = ".local/token-usage.jsonl"
     allow_stub_providers_without_keys: bool = False
     openai_base_url: str = "https://api.openai.com/v1"
+    anthropic_base_url: str = "https://api.anthropic.com"
     gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
     perplexity_base_url: str = "https://api.perplexity.ai"
     anthropic_api_key: str | None = Field(
         default=None,
         alias="ANTHROPIC_API_KEY",
-        validation_alias=AliasChoices("ANTHROPIC_API_KEY"),
+        validation_alias=AliasChoices(
+            "HUMANIZER_ANTHROPIC_PAID_KEY",
+            "ANTHROPIC_API_KEY",
+        ),
     )
     deepseek_api_key: str | None = Field(
         default=None,
@@ -50,6 +54,7 @@ class Settings(BaseSettings):
         default=None,
         alias="GEMINI_API_KEY",
         validation_alias=AliasChoices(
+            "HUMANIZER_GEMINI_PAID_KEY",
             "GEMINI_API_KEY",
             "GOOGLE_API_KEY",
             "HUMANIZER_GEMINI_API_KEY",

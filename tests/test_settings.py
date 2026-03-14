@@ -1,13 +1,18 @@
 import pytest
 
 from humanizer.core.settings import Settings
+from humanizer.providers.anthropic_adapter import AnthropicAdapter
 from humanizer.providers.gemini_adapter import GeminiAdapter
 from humanizer.providers.openai_adapter import OpenAIAdapter
 from humanizer.providers.perplexity_adapter import PerplexityAdapter
 from humanizer.providers.registry import build_provider_registry
 
 
-def test_settings_autodetect_provider_tokens_from_environment() -> None:
+def test_settings_autodetect_provider_tokens_from_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HUMANIZER_ANTHROPIC_PAID_KEY", "test-anthropic-key")
+    monkeypatch.setenv("HUMANIZER_GEMINI_PAID_KEY", "test-gemini-key")
     settings = Settings()
 
     assert settings.anthropic_api_key == "test-anthropic-key"
@@ -38,6 +43,7 @@ def test_registry_uses_live_adapters_when_stub_mode_is_disabled() -> None:
 
     providers = build_provider_registry(settings)
 
+    assert isinstance(providers["anthropic"], AnthropicAdapter)
     assert isinstance(providers["gemini"], GeminiAdapter)
     assert isinstance(providers["openai"], OpenAIAdapter)
     assert isinstance(providers["perplexity"], PerplexityAdapter)
@@ -67,3 +73,27 @@ def test_token_usage_log_defaults_to_local_ignored_path() -> None:
 
     assert settings.token_usage_log_enabled is True
     assert settings.token_usage_log_path == ".local/token-usage.jsonl"
+
+
+def test_paid_gemini_key_alias_takes_precedence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HUMANIZER_GEMINI_PAID_KEY", "paid-gemini-key")
+    monkeypatch.setenv("HUMANIZER_GEMINI_API_KEY", "free-gemini-key")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+
+    settings = Settings()
+
+    assert settings.gemini_api_key == "paid-gemini-key"
+
+
+def test_paid_anthropic_key_alias_takes_precedence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HUMANIZER_ANTHROPIC_PAID_KEY", "paid-anthropic-key")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "free-anthropic-key")
+
+    settings = Settings()
+
+    assert settings.anthropic_api_key == "paid-anthropic-key"

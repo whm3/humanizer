@@ -10,6 +10,13 @@ The project is built around a provider-agnostic contract:
 - local operators can use the CLI
 - major functions are intended to have both API and CLI coverage
 
+Detection approach:
+
+- this project does not currently ship a dedicated classifier trained on a large labeled corpus of human-written versus AI-written material
+- instead, it asks commercial LLM providers to evaluate the text and returns normalized results across those providers
+- the current product value is in orchestration, normalization, cross-provider comparison, rewrite iteration, and guardrails rather than a proprietary in-house training regimen
+- in the future, purpose-trained local or hosted models could be added for detection and rewrite review
+
 Current live provider-backed detection supports:
 
 - `openai`
@@ -64,7 +71,9 @@ Current environment variables used by the app include:
 - `PERPLEXITY_API_KEY`
 - `GEMINI_API_KEY`
 - `GOOGLE_API_KEY`
+- `HUMANIZER_GEMINI_PAID_KEY`
 - `HUMANIZER_GEMINI_API_KEY`
+- `HUMANIZER_ANTHROPIC_PAID_KEY`
 - `ANTHROPIC_API_KEY`
 - `DEEPSEEK_API_KEY`
 - `GROK_API_KEY`
@@ -216,6 +225,11 @@ Rewrite:
 - provider-backed rewrite is enabled
 - rewritten prose is reviewed before acceptance
 - additions are only accepted if all active review providers support them as grounded in the source/context
+
+Modeling note:
+
+- current detection behavior depends on the judgment of commercial LLMs, not a bespoke supervised detector trained by this repository
+- future versions may add dedicated trained models or local fine-tuned models if the project moves beyond the current provider-orchestration approach
 
 Operational note:
 

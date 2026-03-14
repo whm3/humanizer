@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from time import sleep
 
 import httpx
@@ -20,6 +21,9 @@ from humanizer.providers.json_utils import (
     parse_provider_json,
     parse_rewrite_review_json,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class PerplexityAdapter:
@@ -162,6 +166,7 @@ class PerplexityAdapter:
         }
         for attempt in range(1, attempts + 1):
             try:
+                logger.debug("provider.request provider=%s action=%s model=%s attempt=%d", self.name, action_label, model, attempt)
                 with httpx.Client(timeout=self._timeout_seconds) as client:
                     response = client.post(
                         f"{self._base_url}/chat/completions",
@@ -179,6 +184,7 @@ class PerplexityAdapter:
                         )
                     return _extract_perplexity_output_text(response_payload)
             except httpx.HTTPStatusError as exc:
+                logger.warning("provider.http_error provider=%s action=%s status=%d attempt=%d", self.name, action_label, exc.response.status_code, attempt)
                 if exc.response.status_code == 429 and attempt < attempts:
                     sleep(self._retry_backoff_seconds * attempt)
                     continue

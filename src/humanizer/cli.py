@@ -7,6 +7,7 @@ from typing import Sequence
 from humanizer.analysis.service import AnalysisService
 from humanizer.api.schemas import AnalyzeRequest, BatchAnalyzeRequest, HumanizeRequest
 from humanizer.commands import CommandService
+from humanizer.core.logging_utils import configure_logging
 from humanizer.core.settings import get_settings
 from humanizer.providers.registry import build_provider_registry
 
@@ -59,6 +60,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     settings = get_settings()
+    configure_logging(settings.log_level)
     service = AnalysisService(settings, build_provider_registry(settings))
     commands = CommandService(service)
 

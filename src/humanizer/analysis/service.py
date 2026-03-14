@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from time import perf_counter
 from uuid import uuid4
@@ -28,6 +29,9 @@ from humanizer.providers.base import (
 )
 
 
+logger = logging.getLogger(__name__)
+
+
 class AnalysisService:
     def __init__(self, settings: Settings, providers: dict[str, ProviderAdapter]):
         self.settings = settings
@@ -43,6 +47,13 @@ class AnalysisService:
         selected_providers = self._resolve_providers(request, profile.supported_providers)
         if not selected_providers:
             raise ValidationError("no enabled providers with configured credentials are available")
+        logger.debug(
+            "analyze.start profile=%s content_type=%s requested_provider=%s selected_providers=%s",
+            request.profile,
+            content_type,
+            request.provider,
+            ",".join(selected_providers),
+        )
 
         started = perf_counter()
         source_results: list[AnalyzeResult] = []
@@ -63,6 +74,7 @@ class AnalysisService:
                 if request.provider is not None:
                     raise
                 transient_failures.append(provider_name)
+                logger.warning("analyze.provider_unavailable provider=%s", provider_name)
         if not source_results:
             if transient_failures:
                 raise ValidationError(
@@ -72,6 +84,13 @@ class AnalysisService:
         latency_ms = max(1, int((perf_counter() - started) * 1000))
         consensus = self._build_consensus(source_results)
         worst_case = max(source_results, key=lambda result: result.score)
+        logger.debug(
+            "analyze.done profile=%s consensus_label=%s consensus_score=%.4f providers=%s",
+            profile.name,
+            consensus.label,
+            consensus.score,
+            ",".join(result.provider for result in source_results),
+        )
 
         return AnalyzeAggregateResult(
             content_type=content_type,
@@ -104,6 +123,14 @@ class AnalysisService:
         if content_type == "code":
             raise ValidationError("humanization is disabled for source code inputs")
         humanizer_provider, humanizer_model = self._resolve_humanizer(request)
+        logger.debug(
+            "humanize.start profile=%s provider=%s model=%s threshold=%.2f max_iterations=%d",
+            request.profile,
+            humanizer_provider,
+            humanizer_model,
+            request.threshold,
+            request.max_iterations,
+        )
         iterations: list[HumanizeIteration] = []
         final_analysis: AnalyzeAggregateResult | None = None
 
@@ -154,6 +181,12 @@ class AnalysisService:
                 )
             )
             current_text = rewritten_text
+            logger.debug(
+                "humanize.iteration iteration=%d prior_score=%.4f rewritten_changed=%s",
+                iteration_index,
+                analysis.consensus.score,
+                rewritten_text.strip() != iterations[-1].input_text.strip(),
+            )
 
         if final_analysis is None:
             raise ValidationError("humanization did not produce an analysis result")
@@ -216,6 +249,7 @@ class AnalysisService:
             except Exception as exc:
                 available = False
                 detail = str(exc)
+                logger.warning("provider.preflight_unavailable provider=%s detail=%s", provider_name, detail)
             statuses.append(
                 {
                     "name": provider_name,
@@ -251,6 +285,7 @@ class AnalysisService:
         if provider_name not in self.providers:
             raise ValidationError(f"unsupported or disabled humanizer provider: {provider_name}")
         model_name = request.humanizer_model or self.providers[provider_name].default_model
+        logger.debug("humanizer.resolve provider=%s model=%s", provider_name, model_name)
         return provider_name, model_name
 
     def _analyze_with_provider(

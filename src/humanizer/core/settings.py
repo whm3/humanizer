@@ -9,6 +9,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     app_name: str = "humanizer"
     app_version: str = "0.1.0"
+    log_level: str = "INFO"
     default_provider: str = "openai"
     default_model: str = "gpt-5-mini"
     default_model_openai: str = "gpt-5-mini"

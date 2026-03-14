@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from humanizer.core.settings import Settings
+from humanizer.core.token_usage import TokenUsageLogger
 from humanizer.providers.base import ProviderAdapter
 from humanizer.providers.gemini_adapter import GeminiAdapter
 from humanizer.providers.heuristic_adapter import HeuristicAdapter
@@ -9,6 +10,10 @@ from humanizer.providers.perplexity_adapter import PerplexityAdapter
 
 
 def build_provider_registry(settings: Settings) -> dict[str, ProviderAdapter]:
+    token_usage_logger = TokenUsageLogger(
+        path=settings.token_usage_log_path,
+        enabled=settings.token_usage_log_enabled,
+    )
     provider_specs = [
         (
             "anthropic",
@@ -33,6 +38,7 @@ def build_provider_registry(settings: Settings) -> dict[str, ProviderAdapter]:
                 settings.provider_request_timeout_seconds,
                 settings.provider_retry_attempts,
                 settings.provider_retry_backoff_seconds,
+                token_usage_logger,
             ),
         ),
         (
@@ -52,6 +58,7 @@ def build_provider_registry(settings: Settings) -> dict[str, ProviderAdapter]:
                 settings.provider_request_timeout_seconds,
                 settings.provider_retry_attempts,
                 settings.provider_retry_backoff_seconds,
+                token_usage_logger,
             ),
         ),
         (
@@ -65,6 +72,7 @@ def build_provider_registry(settings: Settings) -> dict[str, ProviderAdapter]:
                 settings.provider_request_timeout_seconds,
                 settings.provider_retry_attempts,
                 settings.provider_retry_backoff_seconds,
+                token_usage_logger,
             ),
         ),
     ]

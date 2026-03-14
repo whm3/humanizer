@@ -484,41 +484,54 @@ class AnalysisService:
             rewritten = re.sub(r"(?m)^\s*---\s*$\n?", "", rewritten)
             rewritten = re.sub(r"(?m)^\s{0,3}##\s+", "", rewritten)
             rewritten = re.sub(r"(?m)^\s{0,3}#\s+\*\*(.*?)\*\*\s*$", r"\1", rewritten)
-            rewritten = re.sub(r"(?m)^\s{0,3}\*End of Speech\*\s*$", "", rewritten)
+            rewritten = re.sub(r"(?m)^\s{0,3}\*(?:end|closing|conclusion)[^*\n]*\*\s*$", "", rewritten, flags=re.IGNORECASE)
 
-        replacements = {
-            "It is not always": "You do not always",
-            "It is always": "It still",
-            "Today, we gather not to speak of fear, but of duty": "This is not really about fear. It is about duty",
-            "It is a promise": "It is a commitment",
-            "It symbolizes": "That shows",
-            "We often talk about": "People talk a lot about",
-            "The willingness to serve, if called, affirms that": "Being willing to serve, if called, shows that",
-            "Registering is not an act of submission; it is an act of confidence.": "Registering is not submission. It shows confidence.",
-            "The future belongs to those who build it.": "The future depends on what people do next.",
-            "Remember: duty is not a burden when it is carried with purpose.": "Duty feels lighter when there is a real reason behind it.",
-            "So stand tall. Sign your name.": "So go sign your name.",
-            "It is not": "It isn't",
-            "It is": "It's",
+        generic_replacements = {
+            "Furthermore, ": "Also, ",
+            "Moreover, ": "Also, ",
+            "Additionally, ": "Also, ",
+            "In addition, ": "Also, ",
+            "However, ": "But ",
+            "Therefore, ": "So ",
+            "Indeed, ": "",
+            "Notably, ": "",
+            "Importantly, ": "",
+            "In order to ": "To ",
+            "utilize": "use",
+            "numerous": "many",
+            "individuals": "people",
         }
-        for source, target in replacements.items():
+        for source, target in generic_replacements.items():
             rewritten = rewritten.replace(source, target)
 
-        if "rhetoric" in lowered_changes or "patriotic" in lowered_signals or "persuasive" in lowered_signals:
-            rewritten = rewritten.replace("this country remains united, capable, and willing to defend the values it holds sacred", "people are still willing to back the country and its values")
-            rewritten = rewritten.replace("You join a lineage of citizens who understood that peace must be protected", "You join other people who knew peace does not protect itself")
+        if "rhetoric" in lowered_changes or "persuasive" in lowered_signals or "parallel" in lowered_signals:
+            rewritten = re.sub(
+                r"\b([A-Z][^.;!?]{3,}?) is not ([^.;!?]{2,}?); it is ([^.;!?]{2,}?)\.",
+                r"\1 isn't \2. It's \3.",
+                rewritten,
+            )
+            rewritten = re.sub(
+                r"\b([A-Z][^.;!?]{3,}?) is not ([^.;!?]{2,}?); it'?s ([^.;!?]{2,}?)\.",
+                r"\1 isn't \2. It's \3.",
+                rewritten,
+            )
 
-        if "generic rhetoric" in lowered_changes or "platitudes" in lowered_signals:
-            rewritten = rewritten.replace("It is an idea, sustained by its people.", "It only lasts if people keep showing up for it.")
-            rewritten = rewritten.replace("the quiet, enduring responsibilities that hold a free nation together", "the everyday responsibilities that keep a country running")
-            rewritten = rewritten.replace("The future goes to those who make it happen.", "What happens next depends on whether people actually do something.")
+        if "generic rhetoric" in lowered_changes or "platitudes" in lowered_signals or "abstract" in lowered_signals:
+            rewritten = rewritten.replace("It is", "It's")
+            rewritten = rewritten.replace("That is", "That's")
+            rewritten = rewritten.replace("There is", "There's")
 
-        if "motivational" in lowered_changes or "parallel" in lowered_signals or "repetitive" in lowered_signals:
-            rewritten = rewritten.replace("It's not something we pick, but it shapes who we turn out to be.", "We don't choose those moments, but they still shape us.")
-            rewritten = rewritten.replace("It's not splitting us up; it's about character and guts holding our security together, beyond just guns or rules.", "It doesn't split people up. It asks people to take some responsibility.")
-            rewritten = rewritten.replace("Signing up isn't giving in. It's owning your confidence.", "Signing up isn't giving in. It's just taking responsibility.")
-            rewritten = rewritten.replace("No citizen move is too small if it backs everyone's freedom.", "Small acts still matter.")
-            rewritten = rewritten.replace("Let history see this generation didn't sit back waiting for somebody else.", "Let it be clear this generation didn't just sit around waiting.")
+        if "motivational" in lowered_changes or "repetitive" in lowered_signals:
+            rewritten = re.sub(
+                r"\b([A-Z][^.!?]{15,}?), and ([a-z][^.!?]{10,})\.",
+                r"\1. \2.",
+                rewritten,
+            )
+            rewritten = re.sub(
+                r"\b([A-Z][^.!?]{15,}?) but ([a-z][^.!?]{10,})\.",
+                r"\1. But \2.",
+                rewritten,
+            )
 
         rewritten = re.sub(r"\n{3,}", "\n\n", rewritten)
         rewritten = re.sub(r"[ \t]{2,}", " ", rewritten)

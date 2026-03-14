@@ -270,28 +270,29 @@ def test_safe_fallback_rewrite_makes_source_grounded_structural_changes() -> Non
 
     original = (
         "## Introduction\n\n"
-        "We often talk about leadership, innovation, and change.\n\n"
-        "Registering is not an act of submission; it is an act of confidence.\n\n"
+        "Furthermore, individuals utilize numerous repetitive phrases in order to communicate.\n\n"
+        "This process is not a burden; it is a practical step.\n\n"
         "---\n\n"
-        "*End of Speech*"
+        "*Closing Remarks*"
     )
 
     rewritten = service._apply_safe_fallback_rewrite(
         original,
         [
             "soften overly rigid whitepaper structure and reduce boilerplate formality",
-            "dial back speechwriter-style rhetoric and make the voice less ceremonial",
+            "break up repeated motivational phrasing and avoid tidy rhetorical contrasts",
         ],
         [
             "formal rhetorical structure",
-            "persuasive patriotic language",
+            "repetitive parallel phrasing",
         ],
     )
 
     assert "## Introduction" not in rewritten
     assert "---" not in rewritten
-    assert "*End of Speech*" not in rewritten
-    assert "Registering is not submission." in rewritten
+    assert "*Closing Remarks*" not in rewritten
+    assert "Also, people use many repetitive phrases" in rewritten
+    assert "This process isn't a burden. It's a practical step." in rewritten
 
 
 def test_analyze_skips_temporarily_unavailable_provider_when_others_succeed() -> None:

@@ -5,6 +5,7 @@ from time import sleep
 import httpx
 
 from humanizer.core.errors import HumanizerError, ProviderTransientError
+from humanizer.core.token_usage import TokenUsageLogger
 from humanizer.providers.base import (
     ProviderRequest,
     ProviderResult,
@@ -32,6 +33,7 @@ class OpenAIAdapter:
         timeout_seconds: float,
         retry_attempts: int,
         retry_backoff_seconds: float,
+        token_usage_logger: TokenUsageLogger | None = None,
     ):
         self.name = "openai"
         self.default_model = default_model
@@ -40,6 +42,7 @@ class OpenAIAdapter:
         self._timeout_seconds = timeout_seconds
         self._retry_attempts = retry_attempts
         self._retry_backoff_seconds = retry_backoff_seconds
+        self._token_usage_logger = token_usage_logger
 
     def analyze(self, request: ProviderRequest) -> ProviderResult:
         model = request.model or self.default_model
@@ -161,7 +164,15 @@ class OpenAIAdapter:
                 with httpx.Client(timeout=self._timeout_seconds) as client:
                     response = client.post(f"{self._base_url}/responses", headers=headers, json=payload)
                     response.raise_for_status()
-                    return response.json()
+                    response_payload = response.json()
+                    if self._token_usage_logger is not None:
+                        self._token_usage_logger.log_response(
+                            provider=self.name,
+                            model=str(payload.get("model") or self.default_model),
+                            operation=action_label,
+                            response_payload=response_payload,
+                        )
+                    return response_payload
             except httpx.HTTPStatusError as exc:
                 if exc.response.status_code == 429 and attempt < attempts:
                     sleep(self._retry_backoff_seconds * attempt)

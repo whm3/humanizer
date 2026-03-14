@@ -60,3 +60,10 @@ def test_request_text_limit_can_be_overridden_from_environment(
     settings = Settings()
 
     assert settings.request_text_max_chars == 12345
+
+
+def test_token_usage_log_defaults_to_local_ignored_path() -> None:
+    settings = Settings()
+
+    assert settings.token_usage_log_enabled is True
+    assert settings.token_usage_log_path == ".local/token-usage.jsonl"

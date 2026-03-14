@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     provider_request_timeout_seconds: float = 60.0
     provider_retry_attempts: int = 2
     provider_retry_backoff_seconds: float = 2.0
+    token_usage_log_enabled: bool = True
+    token_usage_log_path: str = ".local/token-usage.jsonl"
     allow_stub_providers_without_keys: bool = False
     openai_base_url: str = "https://api.openai.com/v1"
     gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"

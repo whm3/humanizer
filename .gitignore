@@ -7,3 +7,4 @@ build/
 *.egg-info/
 .env
 docs/breadcrumbs.log
+.local/

@@ -181,6 +181,16 @@ Run the automated suite:
 ./.venv/bin/pytest
 ```
 
+Live provider calls also write a local token-usage log to `.local/token-usage.jsonl` by default.
+That file is ignored by Git and is intended only for local quota and cost tracking.
+
+You can change or disable it with:
+
+```bash
+TOKEN_USAGE_LOG_ENABLED=true
+TOKEN_USAGE_LOG_PATH=.local/token-usage.jsonl
+```
+
 The current local suite covers:
 
 - settings and provider autodetection

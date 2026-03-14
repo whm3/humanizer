@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextvars import copy_context
 import logging
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -22,6 +23,7 @@ from humanizer.api.schemas import (
 from humanizer.core.errors import ValidationError
 from humanizer.core.errors import ProviderTransientError
 from humanizer.core.settings import Settings
+from humanizer.core.token_usage import TokenUsageLogger
 from humanizer.input_loading import detect_content_type, resolve_text_input
 from humanizer.providers.base import (
     ProviderAdapter,
@@ -48,6 +50,10 @@ class AnalysisService:
         self.settings = settings
         self.providers = providers
         self._rewrite_review_cache: dict[tuple[str, str, str], bool] = {}
+        self.token_usage_logger = TokenUsageLogger(
+            path=settings.token_usage_log_path,
+            enabled=settings.token_usage_log_enabled,
+        )
 
     def analyze(self, request: AnalyzeRequest) -> AnalyzeAggregateResult:
         input_text = resolve_text_input(request.text, request.input_path, request.input_url)
@@ -79,13 +85,14 @@ class AnalysisService:
         with ThreadPoolExecutor(max_workers=min(len(selected_providers), 5) or 1) as executor:
             futures = {
                 executor.submit(
+                    copy_context().run,
                     self._analyze_with_provider,
-                    provider_name=provider_name,
-                    request=request,
-                    input_text=input_text,
-                    content_type=content_type,
-                    profile_name=profile.name,
-                    system_prompt=profile.system_prompt,
+                    provider_name,
+                    request,
+                    input_text,
+                    content_type,
+                    profile.name,
+                    profile.system_prompt,
                 ): provider_name
                 for provider_name in selected_providers
             }
@@ -218,6 +225,7 @@ class AnalysisService:
                 analysis.consensus.score,
                 request.threshold,
                 request.fast_mode,
+                request.max_rewrite_sections,
             )
             iterations.append(
                 HumanizeIteration(
@@ -499,6 +507,7 @@ class AnalysisService:
         prior_score: float,
         target_score: float,
         fast_mode: bool,
+        max_rewrite_sections: int | None,
     ) -> RewriteOutcome:
         segments = text.split("```")
         rewritten_segments: list[str] = []
@@ -512,12 +521,16 @@ class AnalysisService:
             fast_mode,
         )
         rewrite_brief = self._build_rewrite_brief(text, changes, signals)
+        remaining_sections = max_rewrite_sections
         for index, segment in enumerate(segments):
             if index % 2 == 1:
                 rewritten_segments.append(f"```{segment}```")
                 continue
             prose_sections = self._split_rewrite_sections(segment)
             if len(prose_sections) <= 1:
+                if remaining_sections is not None and remaining_sections <= 0:
+                    rewritten_segments.append(segment)
+                    continue
                 outcome = self._rewrite_prose_segment(
                         segment,
                         changes,
@@ -535,11 +548,22 @@ class AnalysisService:
                         1,
                     )
                 rewritten_segments.append(outcome.text)
+                if remaining_sections is not None:
+                    remaining_sections -= 1
                 all_candidates.extend(outcome.candidates)
                 any_accepted = any_accepted or outcome.status == "accepted"
                 any_rejected = any_rejected or outcome.status == "rejected"
                 if outcome.rejection_reason:
                     rejection_reasons.append(outcome.rejection_reason)
+                continue
+            if remaining_sections is not None:
+                sections_to_rewrite = prose_sections[:remaining_sections]
+                sections_to_preserve = prose_sections[remaining_sections:]
+            else:
+                sections_to_rewrite = prose_sections
+                sections_to_preserve = []
+            if not sections_to_rewrite:
+                rewritten_segments.append(segment)
                 continue
             rewritten_sections = [
                 self._rewrite_prose_segment(
@@ -556,11 +580,14 @@ class AnalysisService:
                     fast_mode,
                     rewrite_brief,
                     section_index,
-                    len(prose_sections),
+                    len(sections_to_rewrite),
                 )
-                for section_index, prose_section in enumerate(prose_sections)
+                for section_index, prose_section in enumerate(sections_to_rewrite)
             ]
-            rewritten_segments.append(self._smooth_rewritten_sections([item.text for item in rewritten_sections]))
+            combined_sections = [item.text for item in rewritten_sections] + sections_to_preserve
+            rewritten_segments.append(self._smooth_rewritten_sections(combined_sections))
+            if remaining_sections is not None:
+                remaining_sections = max(0, remaining_sections - len(sections_to_rewrite))
             for outcome in rewritten_sections:
                 all_candidates.extend(outcome.candidates)
                 any_accepted = any_accepted or outcome.status == "accepted"
@@ -788,6 +815,7 @@ class AnalysisService:
         with ThreadPoolExecutor(max_workers=min(len(provider_names), 5) or 1) as executor:
             futures = {
                 executor.submit(
+                    copy_context().run,
                     self.providers[provider_name].analyze,
                     ProviderRequest(
                         text="Preflight availability probe.",
@@ -900,6 +928,7 @@ class AnalysisService:
         with ThreadPoolExecutor(max_workers=min(len(pending), 4) or 1) as executor:
             futures = {
                 executor.submit(
+                    copy_context().run,
                     self.providers[provider_name].review_rewrite,
                     RewriteReviewRequest(
                         source_text=original_text,

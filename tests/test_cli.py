@@ -81,6 +81,7 @@ def test_cli_analyze_outputs_normalized_result(capsys) -> None:
     assert "consensus" in payload["result"]
     assert "worst_case" in payload["result"]
     assert "summary" in payload["result"]
+    assert payload["result"]["usage_summary"]["run_id"].startswith("run_")
     assert len(payload["result"]["summary"]["humanization_changes"]) >= 1
 
 
@@ -160,6 +161,7 @@ def test_cli_humanize_outputs_rewrite_and_final_analysis(capsys) -> None:
     assert payload["result"]["rewritten_text"]
     assert len(payload["result"]["iterations"]) >= 1
     assert "final_analysis" in payload["result"]
+    assert payload["result"]["usage_summary"]["run_id"].startswith("run_")
     assert payload["result"]["humanizer_provider"] == "openai"
     assert payload["result"]["humanizer_model"] == "gpt-5-mini"
 

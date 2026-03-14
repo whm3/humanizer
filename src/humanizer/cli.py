@@ -85,6 +85,7 @@ def build_parser() -> argparse.ArgumentParser:
     humanize_parser.add_argument("--language", default="en")
     humanize_parser.add_argument("--threshold", type=float, default=0.35)
     humanize_parser.add_argument("--max-iterations", type=int, default=3)
+    humanize_parser.add_argument("--max-rewrite-sections", type=int)
     add_api_key_arguments(humanize_parser)
 
     return parser
@@ -179,6 +180,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         api_keys=build_api_key_overrides(args),
                         threshold=args.threshold,
                         max_iterations=args.max_iterations,
+                        max_rewrite_sections=args.max_rewrite_sections,
                     )
                 )
             )

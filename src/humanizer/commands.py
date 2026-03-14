@@ -6,6 +6,7 @@ from pathlib import Path
 from humanizer.analysis.service import AnalysisService
 from humanizer.api.schemas import (
     AnalyzeRequest,
+    UsageSummary,
     ApiKeyOverrides,
     BatchAnalyzeRequest,
     HumanizeRequest,
@@ -51,9 +52,14 @@ class CommandService:
 
     def analyze(self, payload: AnalyzeRequest) -> dict[str, object]:
         service = self._service_for_request(payload.api_keys, payload.ignore_env_keys)
+        run_id = service.token_usage_logger.start_run()
+        result = service.analyze(payload)
+        result.usage_summary = UsageSummary.model_validate(
+            service.token_usage_logger.end_run(run_id).__dict__
+        )
         return {
             "status": "success",
-            "result": service.analyze(payload).model_dump(),
+            "result": result.model_dump(),
         }
 
     def analyze_batch(self, payload: BatchAnalyzeRequest) -> dict[str, object]:
@@ -66,9 +72,14 @@ class CommandService:
 
     def humanize(self, payload: HumanizeRequest) -> dict[str, object]:
         service = self._service_for_request(payload.api_keys, payload.ignore_env_keys)
+        run_id = service.token_usage_logger.start_run()
+        result = service.humanize_until_threshold(payload)
+        result.usage_summary = UsageSummary.model_validate(
+            service.token_usage_logger.end_run(run_id).__dict__
+        )
         response = {
             "status": "success",
-            "result": service.humanize_until_threshold(payload).model_dump(),
+            "result": result.model_dump(),
         }
         self._write_debug_output(payload.debug_output_path, response)
         return response

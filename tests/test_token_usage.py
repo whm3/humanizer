@@ -15,6 +15,7 @@ def test_extract_token_usage_for_openai() -> None:
     assert record.input_tokens == 11
     assert record.output_tokens == 7
     assert record.total_tokens == 18
+    assert record.estimated_cost_usd == 0.000017
 
 
 def test_extract_token_usage_for_gemini() -> None:
@@ -29,6 +30,7 @@ def test_extract_token_usage_for_gemini() -> None:
     assert record.input_tokens == 13
     assert record.output_tokens == 5
     assert record.total_tokens == 18
+    assert record.estimated_cost_usd == 0.000002
 
 
 def test_extract_token_usage_for_perplexity() -> None:
@@ -43,6 +45,7 @@ def test_extract_token_usage_for_perplexity() -> None:
     assert record.input_tokens == 17
     assert record.output_tokens == 3
     assert record.total_tokens == 20
+    assert record.estimated_cost_usd == 0.00502
 
 
 def test_extract_token_usage_for_anthropic() -> None:
@@ -57,6 +60,7 @@ def test_extract_token_usage_for_anthropic() -> None:
     assert record.input_tokens == 21
     assert record.output_tokens == 6
     assert record.total_tokens == 27
+    assert record.estimated_cost_usd == 0.000153
 
 
 def test_extract_token_usage_for_grok() -> None:
@@ -71,6 +75,7 @@ def test_extract_token_usage_for_grok() -> None:
     assert record.input_tokens == 19
     assert record.output_tokens == 4
     assert record.total_tokens == 23
+    assert record.estimated_cost_usd is None
 
 
 def test_token_usage_logger_writes_jsonl(tmp_path) -> None:
@@ -93,3 +98,33 @@ def test_token_usage_logger_writes_jsonl(tmp_path) -> None:
     assert payload["input_tokens"] == 9
     assert payload["output_tokens"] == 4
     assert payload["total_tokens"] == 13
+    assert payload["event_type"] == "usage"
+    assert payload["estimated_cost_usd"] == 0.00001
+
+
+def test_token_usage_logger_writes_run_summary(tmp_path) -> None:
+    log_path = tmp_path / "token-usage.jsonl"
+    logger = TokenUsageLogger(str(log_path))
+    run_id = logger.start_run()
+
+    logger.log_response(
+        provider="openai",
+        model="gpt-5-mini",
+        operation="openai request",
+        response_payload={"usage": {"input_tokens": 100, "output_tokens": 50, "total_tokens": 150}},
+    )
+
+    summary = logger.end_run(run_id)
+
+    assert summary.run_id == run_id
+    assert summary.calls == 1
+    assert summary.total_tokens == 150
+    assert summary.estimated_cost_usd == 0.000125
+    assert summary.cumulative_total_tokens == 150
+
+    lines = log_path.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 2
+    payload = json.loads(lines[-1])
+    assert payload["event_type"] == "run_summary"
+    assert payload["run_id"] == run_id
+    assert payload["total_tokens"] == 150

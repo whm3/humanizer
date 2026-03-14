@@ -2,7 +2,7 @@ from humanizer.analysis.service import AnalysisService
 from humanizer.api.schemas import AnalyzeRequest, HumanizeRequest
 from humanizer.core.errors import ProviderTransientError
 from humanizer.core.settings import Settings
-from humanizer.providers.base import RewriteReviewRequest, RewriteReviewResult
+from humanizer.providers.base import ProviderResult, RewriteReviewRequest, RewriteReviewResult
 from humanizer.providers.registry import build_provider_registry
 
 ALL_STUB_PROVIDERS = {"anthropic", "gemini", "openai", "perplexity"}
@@ -257,6 +257,57 @@ def test_humanize_uses_provider_default_model_when_humanizer_model_is_not_set() 
 
     assert result.humanizer_provider == "grok"
     assert result.humanizer_model == "grok-3-mini"
+
+
+def test_humanize_can_limit_rewrite_sections() -> None:
+    class CountingProvider:
+        def __init__(self) -> None:
+            self.name = "openai"
+            self.default_model = "stub"
+            self.rewrite_calls: list[str] = []
+
+        def analyze(self, request):
+            return ProviderResult(
+                label="likely_ai_assisted",
+                score=0.9,
+                confidence="high",
+                signals=["formal structured whitepaper style"],
+                explanation="stub",
+            )
+
+        def rewrite(self, request):
+            self.rewrite_calls.append(request.text)
+            return request.text.replace("Furthermore,", "Also,")
+
+        def review_rewrite(self, request: RewriteReviewRequest) -> RewriteReviewResult:
+            return RewriteReviewResult(
+                supported=True,
+                confidence="high",
+                issues=[],
+                explanation="supported",
+            )
+
+    provider = CountingProvider()
+    service = AnalysisService(Settings(log_level="DEBUG"), {"openai": provider, "anthropic": provider})
+    text = (
+        "First long section with formal structure.\n\n"
+        + ("alpha " * 900)
+        + "\n\n## Second Section\n\n"
+        + ("beta " * 900)
+    )
+
+    result = service.humanize_until_threshold(
+        HumanizeRequest(
+            text=text,
+            provider="openai",
+            humanizer_provider="openai",
+            max_iterations=1,
+            max_rewrite_sections=1,
+        )
+    )
+
+    assert len(provider.rewrite_calls) == 1
+    assert result.iterations[0].rewrite_status in {"accepted", "unchanged", "rejected"}
 
 
 def test_analyze_fast_mode_limits_default_provider_fanout() -> None:

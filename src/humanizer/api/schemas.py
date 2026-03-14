@@ -73,6 +73,7 @@ class HumanizeRequest(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     threshold: float = Field(default=0.35, ge=0.0, le=1.0)
     max_iterations: int = Field(default=3, ge=1, le=10)
+    max_rewrite_sections: int | None = Field(default=None, ge=1, le=20)
 
     @field_validator("text")
     @classmethod
@@ -120,6 +121,30 @@ class AnalysisSummary(BaseModel):
     humanization_changes: list[str]
 
 
+class UsageProviderSummary(BaseModel):
+    provider: str
+    calls: int
+    input_tokens: int
+    output_tokens: int
+    total_tokens: int
+    estimated_cost_usd: float | None = None
+
+
+class UsageSummary(BaseModel):
+    run_id: str
+    calls: int
+    input_tokens: int
+    output_tokens: int
+    total_tokens: int
+    estimated_cost_usd: float | None = None
+    by_provider: list[UsageProviderSummary] = Field(default_factory=list)
+    cumulative_calls: int
+    cumulative_input_tokens: int
+    cumulative_output_tokens: int
+    cumulative_total_tokens: int
+    cumulative_estimated_cost_usd: float | None = None
+
+
 class AnalyzeAggregateResult(BaseModel):
     content_type: Literal["text", "code"]
     profile: str
@@ -131,6 +156,7 @@ class AnalyzeAggregateResult(BaseModel):
     consensus: AggregateSummary
     worst_case: AnalyzeResult
     summary: AnalysisSummary
+    usage_summary: UsageSummary | None = None
 
 
 class HumanizeIteration(BaseModel):
@@ -153,6 +179,7 @@ class HumanizeResult(BaseModel):
     reached_threshold: bool
     iterations: list[HumanizeIteration]
     final_analysis: AnalyzeAggregateResult
+    usage_summary: UsageSummary | None = None
 
 
 class AnalyzeResponse(BaseModel):

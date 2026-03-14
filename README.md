@@ -241,11 +241,22 @@ Example humanize request:
   "profile": "ai_detection",
   "threshold": 0.4,
   "max_iterations": 2,
+  "max_rewrite_sections": 1,
   "humanizer_provider": "openai",
   "humanizer_model": "gpt-5-mini",
   "fast_mode": true
 }
 ```
+
+Analyze and humanize responses also include a `usage_summary` object with:
+
+- the run id
+- per-run token totals
+- per-provider token totals
+- cumulative local totals from the token log
+- an estimated cost in USD when pricing is known for the provider/model pair
+
+The cost figures are local estimates for operational tracking, not a provider billing statement.
 
 ## Input Handling
 
@@ -320,6 +331,13 @@ Relevant settings:
 TOKEN_USAGE_LOG_ENABLED=true
 TOKEN_USAGE_LOG_PATH=.local/token-usage.jsonl
 ```
+
+The token log now contains both:
+
+- per-call `usage` records
+- end-of-run `run_summary` records
+
+That makes it possible to reconstruct both cumulative spend and individual run cost locally.
 
 ## Credential Sources
 

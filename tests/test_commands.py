@@ -46,6 +46,8 @@ def test_command_analyze_returns_normalized_result() -> None:
     assert "consensus" in payload["result"]
     assert "worst_case" in payload["result"]
     assert "summary" in payload["result"]
+    assert "usage_summary" in payload["result"]
+    assert payload["result"]["usage_summary"]["run_id"].startswith("run_")
     assert len(payload["result"]["summary"]["humanization_changes"]) >= 1
 
 
@@ -80,6 +82,7 @@ def test_command_humanize_rewrites_and_returns_iteration_history() -> None:
     assert payload["result"]["rewritten_text"]
     assert len(payload["result"]["iterations"]) >= 1
     assert "final_analysis" in payload["result"]
+    assert payload["result"]["usage_summary"]["run_id"].startswith("run_")
     assert payload["result"]["humanizer_provider"] == "openai"
     assert payload["result"]["humanizer_model"] == "gpt-5-mini"
 

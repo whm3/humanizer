@@ -46,6 +46,14 @@ Still being tuned:
 
 ## Providers
 
+Current live providers:
+
+- `anthropic`
+- `gemini`
+- `grok`
+- `openai`
+- `perplexity`
+
 Current detection providers:
 
 - `anthropic`
@@ -61,7 +69,7 @@ Current rewrite-capable providers:
 - `openai`
 - `perplexity`
 
-`grok` is currently rewrite-only. It is not part of the detection consensus set because its detector behavior on the project fixture set is not calibrated enough for release use yet.
+`grok` is live and available, but it is currently rewrite-only. It is not part of the detection consensus set because its detector behavior on the project fixture set is not calibrated enough for release use yet.
 
 `deepseek` scaffolding exists but is not part of the current MVP provider surface.
 
@@ -130,6 +138,15 @@ Check provider availability before a live run:
 ./.venv/bin/python -m humanizer.cli providers check
 ```
 
+Check provider availability using only request-scoped keys:
+
+```bash
+./.venv/bin/python -m humanizer.cli providers \
+  --ignore-env-keys \
+  --openai-api-key "$OPENAI_API_KEY" \
+  check
+```
+
 Analyze inline text:
 
 ```bash
@@ -147,12 +164,35 @@ Humanize a local document:
   --max-iterations 2
 ```
 
+For live rewrite evaluation, prefer one provider at a time and write a local debug artifact:
+
+```bash
+./.venv/bin/python -m humanizer.cli humanize \
+  --input-file testdocs/Sub-QuantumVernierCalibration.md \
+  --humanizer-provider anthropic \
+  --threshold 0.40 \
+  --max-iterations 1 \
+  --fast-mode \
+  --debug-output-file .local/subquantum-anthropic-humanize.json
+```
+
 Use the faster lower-fanout mode for interactive runs:
 
 ```bash
 ./.venv/bin/python -m humanizer.cli analyze \
   --input-file testdocs/greenwald.txt \
   --fast-mode
+```
+
+Analyze with request-scoped credentials and ignore environment keys:
+
+```bash
+./.venv/bin/python -m humanizer.cli analyze \
+  --text "This is a sample paragraph." \
+  --profile ai_detection \
+  --provider openai \
+  --ignore-env-keys \
+  --openai-api-key "$OPENAI_API_KEY"
 ```
 
 ## API
@@ -163,6 +203,7 @@ Current routes:
 - `GET /v1/version`
 - `GET /v1/providers`
 - `GET /v1/providers/status`
+- `POST /v1/providers/status`
 - `POST /v1/analyze`
 - `POST /v1/analyze/batch`
 - `POST /v1/humanize`
@@ -173,7 +214,22 @@ Example analyze request:
 {
   "text": "Sample text to analyze.",
   "profile": "ai_detection",
-  "fast_mode": false
+  "fast_mode": false,
+  "ignore_env_keys": false
+}
+```
+
+Example analyze request with request-scoped keys:
+
+```json
+{
+  "text": "Sample text to analyze.",
+  "profile": "ai_detection",
+  "provider": "openai",
+  "ignore_env_keys": true,
+  "api_keys": {
+    "openai": "sk-live-key-here"
+  }
 }
 ```
 
@@ -227,6 +283,12 @@ Rewrite is also guarded:
 - unsupported additions can cause the rewrite to be rejected
 - debug mode can expose accepted, rejected, unchanged, or skipped rewrite states plus candidate rewrites
 
+Operational note:
+
+- for live rewrite benchmarking, run one humanizer provider at a time rather than parallel side-by-side sessions
+- write the result to a local debug artifact file when comparing providers
+- this gives a cleaner comparison and avoids wasting quota on multiple long guarded rewrite loops running at once
+
 ## Logging
 
 Set `HUMANIZER_LOG_LEVEL=DEBUG` or `LOG_LEVEL=DEBUG` to increase runtime visibility.
@@ -250,12 +312,25 @@ Live provider calls can write local token usage records to `.local/token-usage.j
 
 This file is ignored by Git and is intended for local quota and cost tracking only.
 
+Live humanize runs can also write a local JSON debug artifact with candidate rewrites and review outcomes when `debug_output_path` or `--debug-output-file` is set.
+
 Relevant settings:
 
 ```bash
 TOKEN_USAGE_LOG_ENABLED=true
 TOKEN_USAGE_LOG_PATH=.local/token-usage.jsonl
 ```
+
+## Credential Sources
+
+By default, the service loads provider keys from the environment and `~/.env`.
+
+For API and CLI workflows, you can also supply request-scoped keys directly:
+
+- CLI flags like `--openai-api-key`, `--gemini-api-key`, and `--anthropic-api-key`
+- API request bodies using the `api_keys` object
+
+If the local environment contains keys for another application, set `ignore_env_keys=true` in the API or `--ignore-env-keys` in the CLI to ignore environment-loaded keys for that request.
 
 ## Testing
 

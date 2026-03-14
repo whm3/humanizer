@@ -1,6 +1,6 @@
 import pytest
 
-from humanizer.core.settings import Settings
+from humanizer.core.settings import Settings, with_api_key_overrides
 from humanizer.providers.anthropic_adapter import AnthropicAdapter
 from humanizer.providers.gemini_adapter import GeminiAdapter
 from humanizer.providers.grok_adapter import GrokAdapter
@@ -126,3 +126,18 @@ def test_registry_uses_live_grok_adapter_when_enabled(
     providers = build_provider_registry(settings)
 
     assert isinstance(providers["grok"], GrokAdapter)
+
+
+def test_request_scoped_key_overrides_can_ignore_environment_keys() -> None:
+    settings = Settings(allow_stub_providers_without_keys=True)
+
+    overridden = with_api_key_overrides(
+        settings,
+        ignore_env_keys=True,
+        overrides={"openai": "request-openai-key"},
+    )
+
+    assert overridden.allow_stub_providers_without_keys is False
+    assert overridden.openai_api_key == "request-openai-key"
+    assert overridden.anthropic_api_key is None
+    assert overridden.gemini_api_key is None

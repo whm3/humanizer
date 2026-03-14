@@ -3,6 +3,23 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
+class ApiKeyOverrides(BaseModel):
+    anthropic: str | None = None
+    deepseek: str | None = None
+    gemini: str | None = None
+    grok: str | None = None
+    openai: str | None = None
+    perplexity: str | None = None
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def blank_strings_become_none(cls, value: object) -> object:
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
+        return value
+
+
 class AnalyzeRequest(BaseModel):
     text: str | None = None
     input_path: str | None = None
@@ -13,6 +30,8 @@ class AnalyzeRequest(BaseModel):
     model: str | None = None
     fast_mode: bool = False
     language_hint: str = "en"
+    ignore_env_keys: bool = False
+    api_keys: ApiKeyOverrides | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("text")
@@ -47,7 +66,10 @@ class HumanizeRequest(BaseModel):
     fast_mode: bool = False
     humanizer_provider: str | None = None
     humanizer_model: str | None = None
+    debug_output_path: str | None = None
     language_hint: str = "en"
+    ignore_env_keys: bool = False
+    api_keys: ApiKeyOverrides | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     threshold: float = Field(default=0.35, ge=0.0, le=1.0)
     max_iterations: int = Field(default=3, ge=1, le=10)
@@ -175,6 +197,11 @@ class ProviderStatusInfo(BaseModel):
 class ProviderStatusResponse(BaseModel):
     status: Literal["success"]
     providers: list[ProviderStatusInfo]
+
+
+class ProviderStatusRequest(BaseModel):
+    ignore_env_keys: bool = False
+    api_keys: ApiKeyOverrides | None = None
 
 
 class HealthResponse(BaseModel):

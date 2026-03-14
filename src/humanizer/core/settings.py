@@ -93,3 +93,30 @@ class Settings(BaseSettings):
 
 def get_settings() -> Settings:
     return Settings()
+
+
+def with_api_key_overrides(
+    settings: Settings,
+    *,
+    ignore_env_keys: bool = False,
+    overrides: dict[str, str | None] | None = None,
+) -> Settings:
+    key_fields = (
+        "anthropic_api_key",
+        "deepseek_api_key",
+        "gemini_api_key",
+        "grok_api_key",
+        "openai_api_key",
+        "perplexity_api_key",
+    )
+    update: dict[str, str | None] = {}
+    if ignore_env_keys:
+        update.update({field_name: None for field_name in key_fields})
+    if overrides:
+        for provider_name, api_key in overrides.items():
+            field_name = f"{provider_name}_api_key"
+            if field_name in key_fields:
+                update[field_name] = api_key
+    if ignore_env_keys or overrides:
+        update["allow_stub_providers_without_keys"] = False
+    return settings.model_copy(update=update)

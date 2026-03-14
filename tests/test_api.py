@@ -1,6 +1,9 @@
 import pytest
 from httpx import AsyncClient
 
+from humanizer.providers.base import ProviderResult
+from humanizer.providers.openai_adapter import OpenAIAdapter
+
 
 @pytest.mark.asyncio
 async def test_health_endpoint_returns_service_metadata(client: AsyncClient) -> None:
@@ -51,6 +54,19 @@ async def test_provider_status_endpoint_lists_provider_preflight(client: AsyncCl
 
 
 @pytest.mark.asyncio
+async def test_provider_status_endpoint_accepts_request_scoped_keys(client: AsyncClient) -> None:
+    response = await client.post(
+        "/v1/providers/status",
+        json={"ignore_env_keys": True, "api_keys": {"openai": "request-openai-key"}},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "success"
+    assert {item["name"] for item in payload["providers"]} == {"openai"}
+
+
+@pytest.mark.asyncio
 async def test_analyze_endpoint_returns_normalized_result(client: AsyncClient) -> None:
     response = await client.post(
         "/v1/analyze",
@@ -69,6 +85,39 @@ async def test_analyze_endpoint_returns_normalized_result(client: AsyncClient) -
     }
     assert payload["result"]["consensus"]["providers_considered"]
     assert payload["result"]["request_id"].startswith("req_")
+
+
+@pytest.mark.asyncio
+async def test_analyze_endpoint_accepts_request_scoped_api_keys(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        OpenAIAdapter,
+        "analyze",
+        lambda self, request: ProviderResult(
+            label="likely_human",
+            score=0.2,
+            confidence="medium",
+            signals=["stubbed"],
+            explanation="stubbed",
+        ),
+    )
+
+    response = await client.post(
+        "/v1/analyze",
+        json={
+            "text": "This is a sample sentence for analysis.",
+            "profile": "ai_detection",
+            "ignore_env_keys": True,
+            "api_keys": {"openai": "request-openai-key"},
+            "provider": "openai",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["result"]["selected_providers"] == ["openai"]
 
 
 @pytest.mark.asyncio

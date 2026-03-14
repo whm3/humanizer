@@ -1,7 +1,18 @@
+import json
+from pathlib import Path
+
 from humanizer.analysis.service import AnalysisService
-from humanizer.api.schemas import AnalyzeRequest, BatchAnalyzeRequest, HumanizeRequest
+from humanizer.api.schemas import (
+    AnalyzeRequest,
+    ApiKeyOverrides,
+    BatchAnalyzeRequest,
+    HumanizeRequest,
+    ProviderStatusRequest,
+)
 from humanizer.commands import CommandService
 from humanizer.core.settings import Settings
+from humanizer.providers.base import ProviderResult
+from humanizer.providers.openai_adapter import OpenAIAdapter
 from humanizer.providers.registry import build_provider_registry
 
 
@@ -73,6 +84,25 @@ def test_command_humanize_rewrites_and_returns_iteration_history() -> None:
     assert payload["result"]["humanizer_model"] == "gpt-5-mini"
 
 
+def test_command_humanize_can_write_debug_output_file(tmp_path: Path) -> None:
+    commands = build_commands()
+    debug_path = tmp_path / "debug" / "humanize.json"
+
+    payload = commands.humanize(
+        HumanizeRequest(
+            text="Furthermore, individuals utilize numerous repetitive phrases in order to communicate.",
+            threshold=0.40,
+            max_iterations=1,
+            debug_output_path=str(debug_path),
+        )
+    )
+
+    written = json.loads(debug_path.read_text(encoding="utf-8"))
+    assert payload["status"] == "success"
+    assert written["status"] == "success"
+    assert "iterations" in written["result"]
+
+
 def test_command_provider_status_returns_provider_entries() -> None:
     commands = build_commands()
 
@@ -87,3 +117,42 @@ def test_command_provider_status_returns_provider_entries() -> None:
         "perplexity",
     }
     assert all("detail" in item for item in payload["providers"])
+
+
+def test_command_provider_status_can_ignore_environment_keys() -> None:
+    commands = build_commands()
+
+    payload = commands.provider_status(ProviderStatusRequest(ignore_env_keys=True))
+
+    assert payload["status"] == "success"
+    assert payload["providers"] == []
+
+
+def test_command_analyze_uses_request_scoped_keys_when_environment_is_ignored(
+    monkeypatch,
+) -> None:
+    commands = build_commands()
+    monkeypatch.setattr(
+        OpenAIAdapter,
+        "analyze",
+        lambda self, request: ProviderResult(
+            label="likely_human",
+            score=0.2,
+            confidence="medium",
+            signals=["stubbed"],
+            explanation="stubbed",
+        ),
+    )
+
+    payload = commands.analyze(
+        AnalyzeRequest(
+            text="Sample",
+            profile="ai_detection",
+            ignore_env_keys=True,
+            api_keys=ApiKeyOverrides(openai="request-openai-key"),
+            provider="openai",
+        )
+    )
+
+    assert payload["status"] == "success"
+    assert payload["result"]["selected_providers"] == ["openai"]

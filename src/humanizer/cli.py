@@ -5,11 +5,39 @@ import json
 from typing import Sequence
 
 from humanizer.analysis.service import AnalysisService
-from humanizer.api.schemas import AnalyzeRequest, BatchAnalyzeRequest, HumanizeRequest
+from humanizer.api.schemas import (
+    AnalyzeRequest,
+    BatchAnalyzeRequest,
+    HumanizeRequest,
+    ProviderStatusRequest,
+)
 from humanizer.commands import CommandService
 from humanizer.core.logging_utils import configure_logging
 from humanizer.core.settings import get_settings
 from humanizer.providers.registry import build_provider_registry
+
+
+def add_api_key_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--ignore-env-keys", action="store_true")
+    parser.add_argument("--anthropic-api-key")
+    parser.add_argument("--deepseek-api-key")
+    parser.add_argument("--gemini-api-key")
+    parser.add_argument("--grok-api-key")
+    parser.add_argument("--openai-api-key")
+    parser.add_argument("--perplexity-api-key")
+
+
+def build_api_key_overrides(args: argparse.Namespace) -> dict[str, str] | None:
+    overrides = {
+        "anthropic": args.anthropic_api_key,
+        "deepseek": args.deepseek_api_key,
+        "gemini": args.gemini_api_key,
+        "grok": args.grok_api_key,
+        "openai": args.openai_api_key,
+        "perplexity": args.perplexity_api_key,
+    }
+    filtered = {provider: api_key for provider, api_key in overrides.items() if api_key}
+    return filtered or None
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -20,6 +48,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("version")
 
     providers_parser = subparsers.add_parser("providers")
+    add_api_key_arguments(providers_parser)
     providers_subparsers = providers_parser.add_subparsers(dest="providers_command", required=True)
     providers_subparsers.add_parser("list")
     providers_subparsers.add_parser("check")
@@ -35,6 +64,7 @@ def build_parser() -> argparse.ArgumentParser:
     analyze_parser.add_argument("--model")
     analyze_parser.add_argument("--fast-mode", action="store_true")
     analyze_parser.add_argument("--language", default="en")
+    add_api_key_arguments(analyze_parser)
 
     batch_parser = subparsers.add_parser("analyze-batch")
     batch_parser.add_argument("--file", required=True)
@@ -51,9 +81,11 @@ def build_parser() -> argparse.ArgumentParser:
     humanize_parser.add_argument("--fast-mode", action="store_true")
     humanize_parser.add_argument("--humanizer-provider")
     humanize_parser.add_argument("--humanizer-model")
+    humanize_parser.add_argument("--debug-output-file")
     humanize_parser.add_argument("--language", default="en")
     humanize_parser.add_argument("--threshold", type=float, default=0.35)
     humanize_parser.add_argument("--max-iterations", type=int, default=3)
+    add_api_key_arguments(humanize_parser)
 
     return parser
 
@@ -77,7 +109,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(json.dumps(commands.providers()))
             return 0
         if args.providers_command == "check":
-            print(json.dumps(commands.provider_status()))
+            print(
+                json.dumps(
+                    commands.provider_status(
+                        ProviderStatusRequest(
+                            ignore_env_keys=args.ignore_env_keys,
+                            api_keys=build_api_key_overrides(args),
+                        )
+                    )
+                )
+            )
             return 0
         return 0
     if args.command == "analyze":
@@ -94,6 +135,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                         model=args.model,
                         fast_mode=args.fast_mode,
                         language_hint=args.language,
+                        ignore_env_keys=args.ignore_env_keys,
+                        api_keys=build_api_key_overrides(args),
                     )
                 )
             )
@@ -130,7 +173,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                         fast_mode=args.fast_mode,
                         humanizer_provider=args.humanizer_provider,
                         humanizer_model=args.humanizer_model,
+                        debug_output_path=args.debug_output_file,
                         language_hint=args.language,
+                        ignore_env_keys=args.ignore_env_keys,
+                        api_keys=build_api_key_overrides(args),
                         threshold=args.threshold,
                         max_iterations=args.max_iterations,
                     )

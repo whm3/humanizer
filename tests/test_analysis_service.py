@@ -239,6 +239,55 @@ def test_humanize_fast_mode_uses_single_review_provider() -> None:
     assert len(reviewers) == 1
 
 
+def test_split_rewrite_sections_prefers_natural_markdown_boundaries() -> None:
+    settings = Settings(allow_stub_providers_without_keys=True)
+    service = AnalysisService(settings, build_provider_registry(settings))
+    text = (
+        "# Title\n\n"
+        + ("This is a long introductory paragraph. " * 80)
+        + "\n\n## Section A\n\n"
+        + ("This is section A prose. " * 90)
+        + "\n\n## Section B\n\n"
+        + ("This is section B prose. " * 90)
+    )
+
+    sections = service._split_rewrite_sections(text)
+
+    assert len(sections) >= 2
+    assert sections[0].lstrip().startswith("# Title")
+    assert any("## Section A" in section for section in sections)
+    assert any("## Section B" in section for section in sections)
+
+
+def test_build_rewrite_brief_carries_global_guidance() -> None:
+    settings = Settings(allow_stub_providers_without_keys=True)
+    service = AnalysisService(settings, build_provider_registry(settings))
+
+    brief = service._build_rewrite_brief(
+        "# Title\n\nThis opening paragraph establishes the document voice clearly.\n\n## Later\n\nMore text.",
+        ["soften overly rigid whitepaper structure", "replace invented terminology"],
+        ["formal rhetorical structure", "invented terminology"],
+    )
+
+    assert "Apply the same voice" in brief
+    assert "Anchor the document voice" in brief
+    assert "soften overly rigid whitepaper structure" in brief
+
+
+def test_smooth_rewritten_sections_removes_simple_boundary_duplication() -> None:
+    settings = Settings(allow_stub_providers_without_keys=True)
+    service = AnalysisService(settings, build_provider_registry(settings))
+
+    smoothed = service._smooth_rewritten_sections(
+        [
+            "This section ends with a repeated boundary sentence that should carry over.",
+            "with a repeated boundary sentence that should carry over. The next section continues.",
+        ]
+    )
+
+    assert smoothed.count("repeated boundary sentence") == 1
+
+
 def test_analyze_rejects_rewrite_only_provider_for_detection() -> None:
     settings = Settings(allow_stub_providers_without_keys=True)
     service = AnalysisService(settings, build_provider_registry(settings))

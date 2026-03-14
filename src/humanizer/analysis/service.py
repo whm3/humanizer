@@ -31,6 +31,7 @@ from humanizer.providers.base import (
 
 
 logger = logging.getLogger(__name__)
+SECTION_REWRITE_MAX_CHARS = 3500
 
 
 class AnalysisService:
@@ -490,13 +491,35 @@ class AnalysisService:
             humanizer_provider,
             fast_mode,
         )
+        rewrite_brief = self._build_rewrite_brief(text, changes, signals)
         for index, segment in enumerate(segments):
             if index % 2 == 1:
                 rewritten_segments.append(f"```{segment}```")
                 continue
-            rewritten_segments.append(
+            prose_sections = self._split_rewrite_sections(segment)
+            if len(prose_sections) <= 1:
+                rewritten_segments.append(
+                    self._rewrite_prose_segment(
+                        segment,
+                        changes,
+                        signals,
+                        rewrite_review_providers,
+                        humanizer_provider,
+                        humanizer_model,
+                        language_hint,
+                        iteration_index,
+                        prior_score,
+                        target_score,
+                        fast_mode,
+                        rewrite_brief,
+                        0,
+                        1,
+                    )
+                )
+                continue
+            rewritten_sections = [
                 self._rewrite_prose_segment(
-                    segment,
+                    prose_section,
                     changes,
                     signals,
                     rewrite_review_providers,
@@ -507,8 +530,13 @@ class AnalysisService:
                     prior_score,
                     target_score,
                     fast_mode,
+                    rewrite_brief,
+                    section_index,
+                    len(prose_sections),
                 )
-            )
+                for section_index, prose_section in enumerate(prose_sections)
+            ]
+            rewritten_segments.append(self._smooth_rewritten_sections(rewritten_sections))
         return "".join(rewritten_segments)
 
     def _rewrite_prose_segment(
@@ -524,6 +552,9 @@ class AnalysisService:
         prior_score: float,
         target_score: float,
         fast_mode: bool,
+        rewrite_brief: str,
+        section_index: int,
+        section_total: int,
     ) -> str:
         if not text.strip():
             return text
@@ -538,7 +569,11 @@ class AnalysisService:
                 iteration=iteration_index,
                 prior_score=prior_score,
                 target_score=target_score,
-                metadata={},
+                metadata={
+                    "rewrite_brief": rewrite_brief,
+                    "section_index": section_index,
+                    "section_total": section_total,
+                },
             )
         )
         if not rewritten.strip():
@@ -602,6 +637,73 @@ class AnalysisService:
         if fast_mode:
             return review_providers[:1]
         return review_providers
+
+    def _build_rewrite_brief(
+        self,
+        text: str,
+        changes: list[str],
+        signals: list[str],
+    ) -> str:
+        opening = _first_meaningful_paragraph(text)
+        brief_lines = [
+            "Apply the same voice and terminology rules consistently across every rewritten section.",
+            "Prefer the same overall level of formality throughout the document; do not let sections drift apart in tone.",
+        ]
+        if opening:
+            brief_lines.append(f"Anchor the document voice to this representative passage: {opening}")
+        if changes:
+            brief_lines.append("Primary global rewrite goals: " + "; ".join(changes[:3]))
+        if signals:
+            brief_lines.append("Global detector artifacts to reduce: " + "; ".join(signals[:3]))
+        return "\n".join(brief_lines)
+
+    def _split_rewrite_sections(self, text: str) -> list[str]:
+        if len(text) <= SECTION_REWRITE_MAX_CHARS:
+            return [text]
+        blocks = _split_markdown_blocks(text)
+        sections: list[str] = []
+        current = ""
+        for block in blocks:
+            if not block.strip():
+                if current:
+                    current += block
+                continue
+            if current and (
+                len(current) + len(block) > SECTION_REWRITE_MAX_CHARS
+                or _starts_new_natural_section(block)
+            ):
+                sections.append(current)
+                current = block
+            else:
+                current += block
+        if current:
+            sections.append(current)
+        return [section for section in sections if section.strip()] or [text]
+
+    def _smooth_rewritten_sections(self, sections: list[str]) -> str:
+        cleaned: list[str] = []
+        for section in sections:
+            section_text = section.strip()
+            if not section_text:
+                continue
+            if cleaned:
+                previous = cleaned[-1]
+                previous_words = previous.split()
+                section_words = section_text.split()
+                overlap = 0
+                max_overlap = min(len(previous_words), len(section_words), 16)
+                for size in range(max_overlap, 3, -1):
+                    if previous_words[-size:] == section_words[:size]:
+                        overlap = size
+                        break
+                if overlap:
+                    section_text = " ".join(section_words[overlap:]).strip()
+            if section_text:
+                cleaned.append(section_text)
+        joined = "\n\n".join(cleaned)
+        joined = re.sub(r"\n{3,}", "\n\n", joined)
+        joined = re.sub(r"[ \t]{2,}", " ", joined)
+        return joined.strip()
 
     def _limit_fast_mode_providers(self, provider_names: list[str]) -> list[str]:
         preferred_order = ["anthropic", "openai", "gemini", "perplexity"]
@@ -789,3 +891,25 @@ def _strip_reference_sections(text: str) -> str:
         r"(?ims)\n\s{0,3}(references|bibliography|sources)\s*:?\s*\n.*$"
     )
     return re.sub(pattern, "", text).rstrip()
+
+
+def _split_markdown_blocks(text: str) -> list[str]:
+    return re.findall(r".*?(?:\n\s*\n|$)", text, flags=re.DOTALL)
+
+
+def _starts_new_natural_section(block: str) -> bool:
+    stripped = block.lstrip()
+    if not stripped:
+        return False
+    return stripped.startswith("#") or stripped.startswith("##") or stripped.startswith("###")
+
+
+def _first_meaningful_paragraph(text: str) -> str:
+    for block in _split_markdown_blocks(text):
+        stripped = block.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("#") or stripped.startswith("```"):
+            continue
+        return " ".join(stripped.split())[:280]
+    return ""

@@ -58,6 +58,21 @@ def build_analysis_instructions(request: ProviderRequest) -> str:
 def build_rewrite_instructions(request: RewriteRequest) -> str:
     requested_changes = "\n".join(f"- {change}" for change in request.changes) or "- make the prose sound less machine-generated"
     signal_notes = "\n".join(f"- {signal}" for signal in request.signals[:4]) or "- no detector signals were provided"
+    shared_brief = ""
+    rewrite_brief = request.metadata.get("rewrite_brief")
+    if isinstance(rewrite_brief, str) and rewrite_brief.strip():
+        shared_brief = (
+            "Shared document rewrite brief:\n"
+            f"{rewrite_brief.strip()}\n"
+        )
+    section_context = ""
+    section_index = request.metadata.get("section_index")
+    section_total = request.metadata.get("section_total")
+    if isinstance(section_index, int) and isinstance(section_total, int) and section_total > 1:
+        section_context = (
+            f"This rewrite applies to section {section_index + 1} of {section_total}.\n"
+            "Keep vocabulary, tone, and transition style consistent with the rest of the document.\n"
+        )
     escalation = ""
     if request.iteration > 1 or request.prior_score > (request.target_score + 0.20):
         escalation = (
@@ -77,6 +92,8 @@ def build_rewrite_instructions(request: RewriteRequest) -> str:
         f"Primary language hint: {request.language_hint}.\n"
         f"Content type: {request.content_type} prose.\n"
         f"Current detector score: {request.prior_score:.2f}. Target score: {request.target_score:.2f}. Rewrite iteration: {request.iteration}.\n"
+        f"{shared_brief}"
+        f"{section_context}"
         "Requirements:\n"
         "- Return only the rewritten text.\n"
         "- Preserve markdown where it remains useful, but you may simplify rigid headings or separators when they make the text feel templated.\n"

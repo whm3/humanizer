@@ -71,3 +71,19 @@ def test_command_humanize_rewrites_and_returns_iteration_history() -> None:
     assert "final_analysis" in payload["result"]
     assert payload["result"]["humanizer_provider"] == "openai"
     assert payload["result"]["humanizer_model"] == "gpt-5-mini"
+
+
+def test_command_provider_status_returns_provider_entries() -> None:
+    commands = build_commands()
+
+    payload = commands.provider_status()
+
+    assert payload["status"] == "success"
+    assert {item["name"] for item in payload["providers"]} == {
+        "anthropic",
+        "gemini",
+        "grok",
+        "openai",
+        "perplexity",
+    }
+    assert all("detail" in item for item in payload["providers"])

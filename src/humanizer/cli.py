@@ -21,6 +21,7 @@ def build_parser() -> argparse.ArgumentParser:
     providers_parser = subparsers.add_parser("providers")
     providers_subparsers = providers_parser.add_subparsers(dest="providers_command", required=True)
     providers_subparsers.add_parser("list")
+    providers_subparsers.add_parser("check")
 
     analyze_parser = subparsers.add_parser("analyze")
     analyze_input_group = analyze_parser.add_mutually_exclusive_group(required=True)
@@ -68,7 +69,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(json.dumps(commands.version()))
         return 0
     if args.command == "providers":
-        print(json.dumps(commands.providers()))
+        if args.providers_command == "list":
+            print(json.dumps(commands.providers()))
+            return 0
+        if args.providers_command == "check":
+            print(json.dumps(commands.provider_status()))
+            return 0
         return 0
     if args.command == "analyze":
         print(

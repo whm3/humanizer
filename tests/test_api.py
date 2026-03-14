@@ -34,6 +34,23 @@ async def test_providers_endpoint_lists_supported_providers(client: AsyncClient)
 
 
 @pytest.mark.asyncio
+async def test_provider_status_endpoint_lists_provider_preflight(client: AsyncClient) -> None:
+    response = await client.get("/v1/providers/status")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "success"
+    assert {item["name"] for item in payload["providers"]} == {
+        "anthropic",
+        "gemini",
+        "grok",
+        "openai",
+        "perplexity",
+    }
+    assert all("detail" in item for item in payload["providers"])
+
+
+@pytest.mark.asyncio
 async def test_analyze_endpoint_returns_normalized_result(client: AsyncClient) -> None:
     response = await client.post(
         "/v1/analyze",

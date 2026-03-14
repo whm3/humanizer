@@ -160,6 +160,18 @@ class ProvidersResponse(BaseModel):
     providers: list[ProviderInfo]
 
 
+class ProviderStatusInfo(BaseModel):
+    name: str
+    available: bool
+    default_model: str
+    detail: str
+
+
+class ProviderStatusResponse(BaseModel):
+    status: Literal["success"]
+    providers: list[ProviderStatusInfo]
+
+
 class HealthResponse(BaseModel):
     status: Literal["ok"]
     service: str

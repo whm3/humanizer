@@ -197,6 +197,23 @@ def test_humanize_allows_humanizer_provider_override() -> None:
     assert result.humanizer_model == "gemini-2.5-pro"
 
 
+def test_humanize_uses_provider_default_model_when_humanizer_model_is_not_set() -> None:
+    settings = Settings(allow_stub_providers_without_keys=True, enable_provider_grok=True)
+    service = AnalysisService(settings, build_provider_registry(settings))
+
+    result = service.humanize_until_threshold(
+        HumanizeRequest(
+            text="This draft feels polished and repetitive in a way that detectors may dislike.",
+            threshold=0.40,
+            max_iterations=1,
+            humanizer_provider="grok",
+        )
+    )
+
+    assert result.humanizer_provider == "grok"
+    assert result.humanizer_model == "grok-3-mini"
+
+
 def test_analyze_rejects_rewrite_only_provider_for_detection() -> None:
     settings = Settings(allow_stub_providers_without_keys=True)
     service = AnalysisService(settings, build_provider_registry(settings))

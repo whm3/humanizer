@@ -37,6 +37,22 @@ def test_cli_providers_list_outputs_known_providers(capsys) -> None:
     }
 
 
+def test_cli_providers_check_outputs_provider_status(capsys) -> None:
+    exit_code = main(["providers", "check"])
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert exit_code == 0
+    assert payload["status"] == "success"
+    assert {item["name"] for item in payload["providers"]} == {
+        "anthropic",
+        "gemini",
+        "grok",
+        "openai",
+        "perplexity",
+    }
+
+
 def test_cli_analyze_outputs_normalized_result(capsys) -> None:
     exit_code = main(["analyze", "--text", "Sample input text", "--profile", "ai_detection"])
 

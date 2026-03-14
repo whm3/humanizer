@@ -30,6 +30,12 @@ class CommandService:
             "providers": self.analysis_service.list_providers(),
         }
 
+    def provider_status(self) -> dict[str, object]:
+        return {
+            "status": "success",
+            "providers": self.analysis_service.provider_status(),
+        }
+
     def analyze(self, payload: AnalyzeRequest) -> dict[str, object]:
         return {
             "status": "success",

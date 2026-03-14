@@ -195,6 +195,37 @@ class AnalysisService:
             for provider_name in sorted(self.providers)
         ]
 
+    def provider_status(self) -> list[dict[str, str | bool]]:
+        statuses: list[dict[str, str | bool]] = []
+        for provider_name in sorted(self.providers):
+            provider = self.providers[provider_name]
+            available = True
+            detail = "available"
+            try:
+                provider.analyze(
+                    ProviderRequest(
+                        text="Preflight availability probe.",
+                        profile_name="ai_detection",
+                        language_hint="en",
+                        content_type="text",
+                        system_prompt="Classify the text for likely AI assistance and return normalized scoring signals.",
+                        model=provider.default_model,
+                        metadata={"preflight": True},
+                    )
+                )
+            except Exception as exc:
+                available = False
+                detail = str(exc)
+            statuses.append(
+                {
+                    "name": provider_name,
+                    "available": available,
+                    "default_model": provider.default_model,
+                    "detail": detail,
+                }
+            )
+        return statuses
+
     def _resolve_providers(
         self,
         request: AnalyzeRequest,
@@ -219,7 +250,7 @@ class AnalysisService:
         provider_name = request.humanizer_provider or self.settings.default_humanizer_provider
         if provider_name not in self.providers:
             raise ValidationError(f"unsupported or disabled humanizer provider: {provider_name}")
-        model_name = request.humanizer_model or self.settings.default_humanizer_model
+        model_name = request.humanizer_model or self.providers[provider_name].default_model
         return provider_name, model_name
 
     def _analyze_with_provider(

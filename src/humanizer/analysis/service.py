@@ -703,6 +703,16 @@ class AnalysisService:
         if sanitized.strip() == original_text.strip():
             return original_text, "guardrails removed unsupported additions or no material change remained"
 
+        # Deterministic factual-novelty check: reject rewrites that introduce
+        # numbers, dates, percentages, or dollar amounts not in the original.
+        novel_facts = _detect_novel_facts(original_text, sanitized)
+        if novel_facts:
+            logger.warning(
+                "rewrite.novel_facts_detected count=%d examples=%s",
+                len(novel_facts), novel_facts[:3],
+            )
+            return original_text, f"rewrite introduced {len(novel_facts)} novel factual element(s): {', '.join(novel_facts[:3])}"
+
         if not review_provider_names:
             # No alternate provider to validate the rewrite. Instead of hard-rejecting,
             # accept the rewrite with a warning. The caller can check for this reason.
@@ -1016,3 +1026,49 @@ def _first_meaningful_paragraph(text: str) -> str:
             continue
         return " ".join(stripped.split())[:280]
     return ""
+
+
+def _detect_novel_facts(original: str, rewritten: str) -> list[str]:
+    """Detect numbers, dates, percentages, and dollar amounts in the rewrite
+    that are not present in the original text. Returns a list of novel elements.
+
+    This is a deterministic check that does not rely on LLM judgment.
+    """
+    # Extract factual tokens from both texts
+    original_facts = _extract_factual_tokens(original)
+    rewritten_facts = _extract_factual_tokens(rewritten)
+
+    # Novel facts = in rewrite but not in original
+    novel = rewritten_facts - original_facts
+    return sorted(novel)
+
+
+def _extract_factual_tokens(text: str) -> set[str]:
+    """Extract numbers, dates, percentages, dollar amounts, and standard
+    references from text. Returns a set of normalized tokens."""
+    tokens: set[str] = set()
+
+    # Numbers (integers and decimals, excluding very common ones like 1, 2, 3)
+    for match in re.finditer(r'\b(\d+\.?\d*)\b', text):
+        num = match.group(1)
+        # Skip single digits and very common numbers
+        if len(num) >= 2 or float(num) >= 10:
+            tokens.add(num)
+
+    # Percentages
+    for match in re.finditer(r'(\d+\.?\d*)\s*%', text):
+        tokens.add(f"{match.group(1)}%")
+
+    # Dollar amounts
+    for match in re.finditer(r'\$\s*(\d[\d,]*\.?\d*)', text):
+        tokens.add(f"${match.group(1)}")
+
+    # Years (4-digit numbers between 1900-2099)
+    for match in re.finditer(r'\b((?:19|20)\d{2})\b', text):
+        tokens.add(match.group(1))
+
+    # Standard/regulation references (e.g., "CFR 650", "NFPA 70B", "TIA-222-H")
+    for match in re.finditer(r'\b([A-Z]{2,}[\s-]?\d+[A-Z]?(?:\.\d+)*)\b', text):
+        tokens.add(match.group(1).strip())
+
+    return tokens

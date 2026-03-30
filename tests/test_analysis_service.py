@@ -466,7 +466,9 @@ def test_rewrite_guardrails_require_consensus_for_additions() -> None:
     )
 
     assert guarded == original
-    assert rejection_reason == "alternate provider validation rejected the rewrite"
+    assert rejection_reason is not None
+    # Novel-facts detector catches the new numbers (18, 25, 30) before LLM review
+    assert "novel factual element" in rejection_reason or "alternate provider" in rejection_reason
 
 
 def test_rewrite_guardrails_accept_without_reviewer_when_none_available() -> None:

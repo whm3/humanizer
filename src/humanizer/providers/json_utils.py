@@ -142,8 +142,12 @@ def parse_provider_json(profile_name: str, payload_text: str) -> ProviderResult:
 
     try:
         parsed = json.loads(candidate)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"provider returned non-JSON content: {payload_text[:200]}") from exc
+    except json.JSONDecodeError:
+        # Fallback: provider returned prose instead of JSON.
+        # Extract what we can from the prose response.
+        parsed = _extract_structured_from_prose(profile_name, payload_text)
+        if parsed is None:
+            raise ValueError(f"provider returned non-JSON content: {payload_text[:200]}")
 
     try:
         payload = StructuredProviderPayload.model_validate(parsed)
@@ -290,6 +294,76 @@ def gemini_rewrite_review_schema() -> dict[str, Any]:
         },
         "required": ["supported", "confidence", "issues", "explanation"],
         "propertyOrdering": ["supported", "confidence", "issues", "explanation"],
+    }
+
+
+def _extract_structured_from_prose(profile_name: str, text: str) -> dict[str, Any] | None:
+    """Best-effort extraction of structured data from a prose response.
+
+    When providers return prose instead of JSON (common with long inputs),
+    attempt to infer the label, score, and key signals from the text.
+    Returns a dict matching StructuredProviderPayload schema, or None if
+    extraction fails.
+    """
+    import re
+
+    text_lower = text.lower()
+    positive_label = POSITIVE_LABELS[profile_name]
+    allowed = PROFILE_LABELS[profile_name]
+    other_label = (allowed - {positive_label}).pop()
+
+    # Try to find a score (0.0-1.0) mentioned in the text
+    score_match = re.search(r'(?:score|rating|confidence|probability)[:\s]*(\d\.\d+)', text_lower)
+    score = float(score_match.group(1)) if score_match else None
+
+    # Try to find percentage and convert to score
+    if score is None:
+        pct_match = re.search(r'(\d{1,3})%\s*(?:likely|probability|chance|confident)', text_lower)
+        if pct_match:
+            score = float(pct_match.group(1)) / 100.0
+
+    # Infer label from keywords
+    ai_keywords = ["ai-generated", "ai generated", "machine-generated", "likely ai",
+                    "appears to be ai", "artificial", "automated", "synthetic"]
+    human_keywords = ["human-written", "human written", "naturally written", "likely human",
+                      "appears human", "organic"]
+
+    ai_hits = sum(1 for kw in ai_keywords if kw in text_lower)
+    human_hits = sum(1 for kw in human_keywords if kw in text_lower)
+
+    if ai_hits > human_hits:
+        label = positive_label
+        if score is None:
+            score = 0.75
+    elif human_hits > ai_hits:
+        label = other_label
+        if score is None:
+            score = 0.25
+    else:
+        # Can't determine — return None to trigger the original error
+        return None
+
+    score = max(0.0, min(1.0, score))
+
+    # Extract signal-like phrases (sentences with key detection words)
+    signals = []
+    for sentence in re.split(r'[.!?]\s+', text):
+        sentence = sentence.strip()
+        if len(sentence) > 20 and any(kw in sentence.lower() for kw in
+                ["pattern", "structure", "tone", "repetit", "formulaic",
+                 "natural", "varied", "human", "authentic", "generic"]):
+            signals.append(sentence[:120])
+            if len(signals) >= 4:
+                break
+    if not signals:
+        signals = ["Provider returned prose instead of JSON; score inferred from keywords"]
+
+    return {
+        "label": label,
+        "score": score,
+        "confidence": "low",  # Always low confidence for prose extraction
+        "signals": signals,
+        "explanation": f"Extracted from prose response (JSON parsing failed). {text[:200]}",
     }
 
 

@@ -56,5 +56,5 @@ def test_build_rewrite_instructions_allows_structural_change_without_new_facts()
     lowered = instructions.lower()
 
     assert "merge, split, reorder, or shorten nearby sentences" in lowered
-    assert "do not introduce new factual claims" in lowered
+    assert "do not introduce any new factual claims" in lowered
     assert "do not preserve the original sentence-by-sentence cadence" in lowered

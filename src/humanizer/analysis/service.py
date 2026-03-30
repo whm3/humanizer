@@ -744,6 +744,10 @@ class AnalysisService:
         brief_lines = [
             "Apply the same voice and terminology rules consistently across every rewritten section.",
             "Prefer the same overall level of formality throughout the document; do not let sections drift apart in tone.",
+            "CRITICAL: Only restyle existing sentences. Do NOT add new factual claims, statistics, dates, "
+            "standard references, or named examples that are not in the original text. Do NOT remove factual "
+            "claims from the original. The rewrite must preserve the same informational content — only the "
+            "voice, sentence structure, and word choice should change.",
         ]
         if opening:
             brief_lines.append(f"Anchor the document voice to this representative passage: {opening}")

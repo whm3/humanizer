@@ -68,7 +68,7 @@ class AnthropicAdapter:
         model = request.model or self.default_model
         payload = {
             "model": model,
-            "max_tokens": 2048,
+            "max_tokens": 4096,
             "system": build_rewrite_instructions(request),
             "messages": [{"role": "user", "content": request.text}],
         }

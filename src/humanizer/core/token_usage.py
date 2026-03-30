@@ -61,6 +61,16 @@ class TokenUsageLogger:
         _CURRENT_RUN_ID.set(run_id)
         return run_id
 
+    def reset(self) -> None:
+        """Clear the usage log file. Use between documents or test runs to get
+        clean per-document cost accounting instead of cumulative totals."""
+        try:
+            with self._lock:
+                if self._path.exists():
+                    self._path.write_text("")
+        except OSError:
+            return
+
     def end_run(self, run_id: str) -> TokenUsageSummary:
         summary = self._summarize_run(run_id)
         if self._enabled:

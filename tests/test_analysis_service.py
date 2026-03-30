@@ -469,7 +469,9 @@ def test_rewrite_guardrails_require_consensus_for_additions() -> None:
     assert rejection_reason == "alternate provider validation rejected the rewrite"
 
 
-def test_rewrite_guardrails_require_secondary_provider_validation() -> None:
+def test_rewrite_guardrails_accept_without_reviewer_when_none_available() -> None:
+    """When no alternate validation provider is available, accept the rewrite
+    rather than hard-rejecting. This enables single-provider deployments."""
     settings = Settings()
     service = AnalysisService(settings, {})
 
@@ -480,8 +482,8 @@ def test_rewrite_guardrails_require_secondary_provider_validation() -> None:
         "en",
     )
 
-    assert guarded == "This is the original paragraph."
-    assert rejection_reason == "no alternate validation provider available"
+    assert guarded == "This is the rewritten paragraph."
+    assert rejection_reason is None
 
 
 def test_rewrite_review_provider_selection_excludes_humanizer_provider() -> None:

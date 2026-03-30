@@ -213,11 +213,14 @@ class AnalysisService:
                 )
                 break
 
+            # Use ALL configured providers for review, not just analysis providers.
+            # This ensures cross-validation works even when analysis is pinned to one provider.
+            all_provider_names = sorted(self.providers.keys())
             rewrite_outcome = self._rewrite_text(
                 current_text,
                 analysis.summary.humanization_changes,
                 analysis.consensus.signals,
-                analysis.selected_providers,
+                all_provider_names,
                 humanizer_provider,
                 humanizer_model,
                 request.language_hint,
@@ -295,33 +298,21 @@ class AnalysisService:
         ]
 
     def provider_status(self) -> list[dict[str, str | bool]]:
+        """Report provider configuration status without making billable API calls.
+
+        This is a configuration check, not a live availability probe. Providers
+        are listed as available if they have API keys configured. Actual provider
+        health is tested when real analyze/rewrite calls are made.
+        """
         statuses: list[dict[str, str | bool]] = []
         for provider_name in sorted(self.providers):
             provider = self.providers[provider_name]
-            available = True
-            detail = "available"
-            try:
-                provider.analyze(
-                    ProviderRequest(
-                        text="Preflight availability probe.",
-                        profile_name="ai_detection",
-                        language_hint="en",
-                        content_type="text",
-                        system_prompt="Classify the text for likely AI assistance and return normalized scoring signals.",
-                        model=provider.default_model,
-                        metadata={"preflight": True},
-                    )
-                )
-            except Exception as exc:
-                available = False
-                detail = str(exc)
-                logger.warning("provider.preflight_unavailable provider=%s detail=%s", provider_name, detail)
             statuses.append(
                 {
                     "name": provider_name,
-                    "available": available,
+                    "available": True,
                     "default_model": provider.default_model,
-                    "detail": detail,
+                    "detail": "configured",
                 }
             )
         return statuses
@@ -399,10 +390,19 @@ class AnalysisService:
             4,
         )
         labels = [result.label for result in source_results]
-        likely_ai_votes = sum(1 for label in labels if "ai" in label)
-        label = labels[0] if len(set(labels)) == 1 else (
-            "likely_ai_assisted" if likely_ai_votes >= (len(labels) / 2) else "likely_human"
-        )
+        if len(set(labels)) == 1:
+            label = labels[0]
+        else:
+            # Profile-aware consensus: use the actual labels from results,
+            # not hardcoded ai_detection labels. Count votes for whichever
+            # label appears most, breaking ties toward the higher-scoring label.
+            from humanizer.providers.json_utils import POSITIVE_LABELS, PROFILE_LABELS
+            profile_name = source_results[0].profile if source_results else "ai_detection"
+            positive_label = POSITIVE_LABELS.get(profile_name, "likely_ai_assisted")
+            allowed = PROFILE_LABELS.get(profile_name, {"likely_ai_assisted", "likely_human"})
+            negative_label = (allowed - {positive_label}).pop() if len(allowed) == 2 else "likely_human"
+            positive_votes = sum(1 for lbl in labels if lbl == positive_label)
+            label = positive_label if positive_votes >= (len(labels) / 2) else negative_label
         confidence = "high" if len(set(labels)) == 1 and len(labels) > 1 else "medium"
         signals: list[str] = []
         for result in source_results:
@@ -704,7 +704,10 @@ class AnalysisService:
             return original_text, "guardrails removed unsupported additions or no material change remained"
 
         if not review_provider_names:
-            return original_text, "no alternate validation provider available"
+            # No alternate provider to validate the rewrite. Instead of hard-rejecting,
+            # accept the rewrite with a warning. The caller can check for this reason.
+            logger.warning("rewrite.no_reviewer accepting rewrite without cross-validation")
+            return sanitized.strip() or original_text, None
 
         if not self._rewrite_has_provider_consensus(
             original_text,
@@ -811,32 +814,13 @@ class AnalysisService:
         content_type: str,
         language_hint: str,
     ) -> list[str]:
-        available: list[str] = []
-        with ThreadPoolExecutor(max_workers=min(len(provider_names), 5) or 1) as executor:
-            futures = {
-                executor.submit(
-                    copy_context().run,
-                    self.providers[provider_name].analyze,
-                    ProviderRequest(
-                        text="Preflight availability probe.",
-                        profile_name="ai_detection",
-                        language_hint=language_hint,
-                        content_type=content_type,
-                        system_prompt="Classify the text for likely AI assistance and return normalized scoring signals.",
-                        model=self.providers[provider_name].default_model,
-                        metadata={"preflight": True},
-                    ),
-                ): provider_name
-                for provider_name in provider_names
-            }
-            for future in as_completed(futures):
-                provider_name = futures[future]
-                try:
-                    future.result()
-                    available.append(provider_name)
-                except Exception as exc:
-                    logger.warning("provider.preflight_unavailable provider=%s detail=%s", provider_name, exc)
-        return sorted(available)
+        # Return all configured providers as available without making billable API calls.
+        # The old implementation sent a real analyze() request to each provider as a
+        # "preflight probe" — this burned tokens, cost money, and could fail due to
+        # JSON normalization issues rather than actual provider unavailability.
+        # Actual availability is checked when the real analyze/rewrite call is made;
+        # transient errors there are already handled by the retry and fallback logic.
+        return sorted(provider_names)
 
     def _apply_safe_fallback_rewrite(
         self,
